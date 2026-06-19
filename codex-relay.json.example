@@ -1,0 +1,17 @@
+{
+  "_help": "Copy to ./.claude/codex-relay.json. Leave session_id empty; the first '/codex-relay new' creates and saves it. Fields below are read by the command; _help is ignored.",
+
+  "session_id": "",
+
+  "verify": [
+    "<the lint command, e.g. `npm run lint` / `ruff check .`>",
+    "<the full test command against the REAL stack, e.g. `npm test` / `uv run pytest`>",
+    "<how to bring the integration stack up, e.g. `docker compose up -d --wait`>"
+  ],
+
+  "env_notes": "<environment quirks the reviewer needs: OS/shell, runtime + version, how the DB/services are provided, whether the reviewer's network is sandboxed (inline external context if so), any secrets to flag-but-never-print, and 'review the delta via local git (git diff <base>..HEAD)'.>",
+
+  "project_subdir": "",
+
+  "skip_git_check": false
+}
