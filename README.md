@@ -58,6 +58,7 @@ direction checking.
    to `./.claude/codex-relay.json` and fill `verify` + `env_notes`; copy `codex-relay.deep-review-prompt.md`
    to `~/.claude/codex-relay/deep-review-prompt.md` (needed for `deep` mode).
 4. Adopt `THE-FLOW.md` as the SOP and `MEMORY-SYSTEM.md` as the memory convention.
+5. **Enable the guards:** `git config core.hooksPath .githooks` — the pre-commit hook runs `lint-methodology.sh` and blocks any commit that leaves `AGENTS.md` stale or the docs broken. The memory discipline ships as an on-demand skill at `.claude/skills/memory-system/`; copy it to `~/.claude/skills/` to make it available across all your repos.
 
 > **v1 assumptions:** builder = Claude, reviewer = Codex (one independent vendor). "Reviewer" is a
 > *role* — swappable later. See [`DECISIONS.md`](DECISIONS.md) for the full rationale and the v2 backlog.

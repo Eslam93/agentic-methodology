@@ -58,11 +58,13 @@ else
   fi
 fi
 
-# 7. no mojibake / encoding corruption (broadened; exclude this script, which holds the patterns literally)
-if grep -rq --exclude=lint-methodology.sh --exclude-dir=.git \
-   -e 'â€' -e 'ðŸ' -e 'Ã¢' -e 'â‰' -e 'â†' -e 'âœ' -e 'âš' -e 'â‡' . 2>/dev/null; then
-  fail "mojibake / encoding corruption detected (Windows-1252/UTF-8 double-encoding)"
+# 7. no mojibake / encoding corruption — scan TRACKED files only (skips untracked scratch like combined dumps)
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  moji=$(git ls-files | grep -v '^lint-methodology\.sh$' | xargs -r grep -l -e 'â€' -e 'ðŸ' -e 'Ã¢' -e 'â‰' -e 'â†' -e 'âœ' -e 'âš' -e 'â‡' 2>/dev/null)
+else
+  moji=$(grep -rl --exclude=lint-methodology.sh --exclude-dir=.git -e 'â€' -e 'ðŸ' -e 'Ã¢' -e 'â‰' -e 'â†' -e 'âœ' -e 'âš' -e 'â‡' . 2>/dev/null)
 fi
+if [ -n "$moji" ]; then fail "mojibake / encoding corruption in: $(printf '%s' "$moji" | tr '\n' ' ')"; fi
 
 # 8. config smell: AGENTS.md shouldn't restate what the toolchain enforces
 if [ -f AGENTS.md ] && grep -qiE 'prettier|eslint|gofmt|rustfmt|ruff|stylelint' AGENTS.md 2>/dev/null; then
