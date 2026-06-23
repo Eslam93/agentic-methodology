@@ -28,7 +28,7 @@ and the task must pass the **[Definition of Ready](docs/definition-of-ready.md)*
 
 > **Core vs hardening:** run the irreducible *core* on every task; switch on *hardening* by tier / maturity — never everywhere. See [`docs/minimal-core.md`](docs/minimal-core.md).
 
-## The six steps
+## The steps
 
 1. **Read & understand everything.** The constitution (`AGENTS.md`), the architecture map, prior
    decisions (ADRs), the task's design note, and the exact code it builds on. **Verify, don't assume.**
@@ -75,13 +75,23 @@ and the task must pass the **[Definition of Ready](docs/definition-of-ready.md)*
    vs the task as written, signed **separately from 🔴 = 0** (a perfectly-built *wrong* feature has an
    empty 🔴 bucket), and (c) the digest: **🔴 / 🟡 / ⚪**, verdict **PASS/CONCERNS/FAIL/WAIVED**. **Merge
    only when 🔴 = 0.** Emit it machine-readable (a hook/CI can enforce 🔴-empty) and human-readable.
-   **Never self-merge unless told.** On merge: close the task, move the board to **Done**, append the
-   worklog. **Tier-1 merges are batched.**
+   **Never self-merge unless told. Tier-1 merges are batched.** (Close-out is Step 7.)
+
+7. **Close-out & handoff — the task boundary (after every merge, before the next task).**
+   - **(a) Close-out** *(part of "done")*: append the **worklog** · update the **handoff doc**
+     ([`docs/resume.md`](docs/resume.md): current state · next task · open threads · how to resume) ·
+     move the board to **Done** · write any **memory** notes · confirm `AGENTS.md` is fresh.
+   - **(b) Checkpoint — context-aware, never auto-start.** The owner's "what's next" answer is **planning,
+     not a go signal.** Present *"Next = [X] (tier) · context ~N% · recommend start now / checkpoint +
+     compact first"* and **wait for the pick** — compact-first when context is heavy, the session is long,
+     or the next task is Tier-2/3; start-now for something trivial with headroom. **Build only on an
+     explicit "now."**
 
 ---
 
 ## Working rules
 
+- **"What's next?" is a planning question, not a start command.** After a merge, run **Step 7** (close-out + the start-now-vs-compact checkpoint) — never dive straight into the next task.
 - **The tier sets the mode** — Conductor (you understand it deeply: T3 governance/security/architecture)
   vs Orchestrator (delegate, review after: T1 boilerplate/tests/scaffolding). State it at pickup.
   *Operationally:* Conductor = the builder reasons through and can explain every change itself (no
@@ -115,6 +125,7 @@ and the task must pass the **[Definition of Ready](docs/definition-of-ready.md)*
 | **Per-task direction** | only if Tier-3 *or* Fuzzy (pre-build); else none |
 | **Per-task correctness** | **never** — AI⇄AI judgment + the Machine's facts |
 | **Merge** | approve from the severity digest (Tier-1 batched) |
+| **Task boundary (post-merge)** | confirm close-out + pick **start now vs compact first** (Step 7) |
 
 > **Honest accounting:** per-task *correctness* is light — but the human's *system-level* touches are real: ratifying golden answers (**not** light), signing each merge's direction-delta, and periodically working the escape log / context-rot sweep / lint triage. "Human owns direction + merge" is the per-task headline, not the whole surface area.
 

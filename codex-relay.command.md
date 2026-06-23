@@ -6,10 +6,10 @@
 
 Send the work done SINCE THE REVIEWER LAST LOOKED to a parallel **Codex** session (a separate `codex`
 session kept for independent verification), get a structured review, relay it, and **reconcile to
-consensus**. Codex re-runs and recomputes on its own, then returns **FINDINGS / VERDICT / NEXT**.
+consensus**. Codex re-runs and recomputes on its own, then returns a **verdict-first digest** (the `VERDICT` line first, then `FINDINGS`, then `NEXT`).
 
 ## Usage
-- `/codex-relay` — review the DELTA since the last relay/checkpoint; lean FINDINGS/VERDICT/NEXT.
+- `/codex-relay` — review the DELTA since the last relay/checkpoint; lean, **verdict-first** digest.
 - `/codex-relay <focus note>` — same, steered (e.g. "focus on the auth edge-cases").
 - `/codex-relay deep [note]` — FULL independent architect + product-strategy review of the whole repo
   (for direction checks; not every iteration).
@@ -55,8 +55,9 @@ Compute the changed set from the baseline:
    WHAT CHANGED / WAS BUILT: <concrete, file-level — the delta>
    VERIFIED HERE: <test / lint / recompute results you already have>   ← CONTEXT PASS ONLY (omit on the cold pass)
    KEY JUDGMENT CALLS / QUESTIONS: <numbered, specific — plus the focus note / any pushback>   ← CONTEXT PASS ONLY (omit on the cold pass)
-   Independently RECOMPUTE before judging, then return a SEVERITY DIGEST:
-   FINDINGS = 🔴 Action-Required / 🟡 Recommended / ⚪ Minor · VERDICT = PASS|CONCERNS|FAIL|WAIVED · NEXT.
+   Independently RECOMPUTE before judging, then return — VERDICT FIRST, tight, nothing before line 1:
+   LINE 1 → VERDICT: PASS|CONCERNS|FAIL|WAIVED · 🔴<n> 🟡<n> ⚪<n>
+   then FINDINGS (🔴/🟡/⚪, one terse line each, with evidence), then NEXT (one line). No preamble, no essay.
    ```
    The reviewer's network is typically sandboxed, so **inline any external context** (issue text, specs)
    into the STATUS — it works from the LOCAL working tree + git delta. (Network-bound integration still
@@ -87,8 +88,8 @@ Compute the changed set from the baseline:
 8. **Persist ids/baseline** after firing: if a fresh thread started, parse its id
    (`grep -i 'session id:'`) and save it as `session_id` in `./.claude/codex-relay.json`. Write
    `last_relay = { ts, git_sha }` to `./.claude/codex-relay.state.json` to advance the delta baseline.
-9. **On completion:** read the output; extract the FINAL `FINDINGS / VERDICT / NEXT`
-   (`grep -n 'FINDINGS\|VERDICT\|NEXT'`, take the last clean copy).
+9. **On completion:** read the **first `VERDICT:` line** — that's all the gate needs (PASS + 🔴-count);
+   read FINDINGS only when reconciling. (`grep -n 'VERDICT'` → take the last clean verdict line.)
 10. **Relay + reconcile (evidence calculus, side-by-side).** Relay the reviewer's reply faithfully — the
     🔴/🟡/⚪ findings, VERDICT, NEXT — **including where it disagrees**. Then reach consensus: **fold the
     clearly-correct must-fixes; push back only WITH EVIDENCE**, weighted by independence — **the reviewer's

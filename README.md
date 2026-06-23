@@ -31,7 +31,7 @@ direction checking.
 
 | Path | What it is |
 |---|---|
-| [`THE-FLOW.md`](THE-FLOW.md) | The per-task **SOP** — the 6-step loop, the dials, the human-map. |
+| [`THE-FLOW.md`](THE-FLOW.md) | The per-task **SOP** — the build loop + close-out, the dials, the human-map. |
 | [`docs/lane-card.md`](docs/lane-card.md) | **The daily entry point** — pick a lane, run its column. |
 | [`docs/phase-0.md`](docs/phase-0.md) | **Bootstrap** — probe → provision → degrade for *any* project. |
 | [`docs/adoption.md`](docs/adoption.md) | **Retrofit** — adopt onto a *live* project in 3 stages (no big-bang). |
@@ -39,6 +39,7 @@ direction checking.
 | [`docs/definition-of-ready.md`](docs/definition-of-ready.md) | The entry gate for a task. |
 | [`docs/design-notes/_TEMPLATE.md`](docs/design-notes/_TEMPLATE.md) | The per-task workhorse (Tier 2/3). |
 | [`docs/adr/_TEMPLATE.md`](docs/adr/_TEMPLATE.md) · [`docs/worklog.md`](docs/worklog.md) | Decisions + session log. |
+| [`docs/resume.md`](docs/resume.md) | **Handoff** — always-current "start here" + prep-for-compact checklist. |
 | [`docs/architecture/README.md`](docs/architecture/README.md) | System-map template (Phase-0 generated). |
 | [`MEMORY-SYSTEM.md`](MEMORY-SYSTEM.md) | File-based long-term memory (rides native auto-memory rails). |
 | [`docs/memory/`](docs/memory/) | Memory starters — `MEMORY.md` index + `_NOTE-TEMPLATE.md` (copy to the harness memory dir). |
