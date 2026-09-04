@@ -78,6 +78,15 @@ only for sensitive / client code.)*
 
 "Done" is **tier-scoped**. The builder proposes the tier at pickup (fail-safe: round **up** when unsure).
 
+## Data posture — demo vs production (declared at Phase 0)
+The bar also flexes with the project's declared **data posture**:
+- **demo** (synthetic / illustrative data only): security, robustness, and adversarial/edge hardening are **non-blocking follow-ups** unless they break a real demo answer. Velocity-first.
+- **production** (real or regulated data): those same concerns are **blocking**; the tier bars apply at their strictest.
+
+Two rules make this a posture, not a loophole:
+1. **Every "because demo" shortcut is logged in the promotion ledger** (`docs/promotion-ledger.md`) — each control switched off or corner cut, with why and the exact step to undo it. In **demo** posture the ledger is *not optional*.
+2. **Crossing demo to production is gated:** posture cannot flip to `production` until the promotion ledger is empty, or each open row is explicitly **owner-waived** with a reason. The reviewer is told the active posture so it scopes to it (and in `production` raises the deferred concerns as blockers).
+
 ## Per-tier bars
 | Tier | "Done" means |
 |---|---|
@@ -92,6 +101,7 @@ only for sensitive / client code.)*
 - **CI green is required for Tier 2+** — it is the only *neutral* integration check (not the builder's machine, not the reviewer's sandbox). No CI ⇒ explicitly degraded guarantee (see Phase 0). **Waiving CI requires:** a reason · owner approval · replacement local-command output · an expiry condition · a follow-up issue · and verdict **WAIVED** (never PASS).
 - **Verification is a test-map, not a ritual:** name the existing tests that cover the change (must stay green) + the new tests each acceptance criterion requires.
 - **A flaky result is not evidence.** The evidence calculus treats a re-run as ground truth, so a check that flips green↔red under re-run is **quarantined, not cited** — fix or isolate it before it can settle a finding.
+- **Verify the verifier.** A green only counts if the check can go red. Keep a **canary** (a deliberately-failing test the runner must report as failed) and run it in every environment; a runner that passes the canary is lying, and its greens are void until it is fixed.
 
 ## The merge gate (severity digest)
 Every review round buckets findings and carries a verdict. **🔴 = demonstrably broken; 🟡 = judgment / suspicion.**

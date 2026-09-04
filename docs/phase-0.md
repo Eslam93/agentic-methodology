@@ -29,10 +29,11 @@ Score each **Absent / Weak / Ready** (mostly automatable file/CLI detection):
 2. **Governance (constitution)** — builder drafts from code ⊕ **your global ruleset _if you have one_**
    (an *optional* per-environment input, e.g. `~/.claude/rules/common/*` — **not vendored** here; with no
    global ruleset the constitution is built from detected conventions ⊕ owner calls alone), surfacing only
-   *conflicts / gaps / project non-negotiables*; reviewer pressure-tests; you ratify. *(reviewer cost)*
+   *conflicts / gaps / project non-negotiables*; reviewer pressure-tests; you ratify. **Also declare the data posture (`demo` | `production`)** — it sets which Definition-of-Done bar and review scope are active, and in `demo` posture it opens the promotion ledger (`docs/promotion-ledger.md`). *(reviewer cost)*
 3. **Architecture map** — reverse-engineered from code (template: `docs/architecture/README.md`); reviewer checks. *(reviewer cost)*
-4. **Verification** — bootstrap lint/test/CI; for greenfield this *becomes* the first real tasks.
+4. **Verification** — bootstrap lint/test/CI; for greenfield this *becomes* the first real tasks. **CI-gate the methodology guard** (rebuild `AGENTS.md` + `git diff --exit-code AGENTS.md` + `lint-methodology.sh`, via `.github/workflows/methodology-guard.yml`) as a **required** check — a by-convention or local-hook guard has been shown to fail open. Add a **verify-the-verifier canary** (a deliberately-failing test the runner must report red).
 5. **Work-definition + tracking/memory** — seed `MEMORY.md` (starters in `docs/memory/`), worklog, board (or worklog-only).
+6. **Communication layer** *(optional, ergonomic — on by default)* — copy the `plain-technical` output style + the six one-shot mode skills into the project's `.claude/` and set `outputStyle`. Voice only; no readiness or correctness impact. See [`docs/communication.md`](docs/communication.md).
 
 Only steps 2–3 cost a reviewer round; the mechanical ones don't.
 
@@ -58,6 +59,7 @@ The human-light promise **scales with substrate**. You can remove the human, *or
 Config files go stale as code moves. **Monthly, or before a milestone:**
 - grep `AGENTS.md` / `CLAUDE.md` / the architecture map for file paths, commands, and module names;
 - verify each still exists; run each listed command;
+- confirm every doc that names the rulebook describes it consistently (no file still calling the guide "the constitution / law" after a rename);
 - delete or update stale instructions (treat the constitution as *code*, not archive);
 - record the sweep in the worklog.
 

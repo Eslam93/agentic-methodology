@@ -31,6 +31,9 @@ That's the bet: the dials route, the Machine carries correctness, the cold relay
 | **EARS criteria + test-map** | Tier 2/3 |
 | **property / fuzz / coverage** | scale to the value of the logic |
 | **linter · context-rot audit · escape log** | project/team maturity (CI-wired) |
+| **communication layer** (plain-technical voice + one-shot modes) | on by adoption; toggle per repo — ergonomic, never a per-task step |
+| **data posture + promotion ledger** (demo vs production) | any project touching real/regulated data, or a demo that may later graduate to production |
+| **CI-gated methodology guard + verify-the-verifier canary** | as soon as CI exists — the by-convention guard has been shown to fail open |
 
 ## The rule
 **Core is non-negotiable; hardening is a dial, not a checklist.** When unsure about a *hardening* item, leave it off for routine work and on for critical — never the reverse. Two axes, one instrument each: **risk** = tier-triggers + blast-radius receipt; **clarity** = uncertainty-type + clarify questions. The 1–10 confidence number is optional color, not a gate (it's gameable). Adding hardening everywhere is how a methodology dies of its own weight.

@@ -43,6 +43,9 @@ direction checking.
 | [`docs/architecture/README.md`](docs/architecture/README.md) | System-map template (Phase-0 generated). |
 | [`MEMORY-SYSTEM.md`](MEMORY-SYSTEM.md) | File-based long-term memory (rides native auto-memory rails). |
 | [`docs/memory/`](docs/memory/) | Memory starters — `MEMORY.md` index + `_NOTE-TEMPLATE.md` (copy to the harness memory dir). |
+| [`docs/communication.md`](docs/communication.md) · `.claude/output-styles/` · `.claude/skills/` | **Communication layer** — plain-technical voice (on by adoption, toggle with `/output-style`) + six one-shot modes. |
+| [`docs/promotion-ledger.md`](docs/promotion-ledger.md) | **Demo→production debt ledger** — required in `demo` posture; the gate to clear before real data (ADR-0002). |
+| `.github/workflows/methodology-guard.yml` | **CI guard** — rebuild `AGENTS.md` + freshness diff + `lint-methodology.sh`; the enforced guard (ADR-0003). |
 | [`codex-relay.command.md`](codex-relay.command.md) | The slash command wiring in the independent reviewer. |
 | [`DECISIONS.md`](DECISIONS.md) | Locked design rationale + evidence base + the parked-for-v2 list. |
 | `build-constitution.sh` · `CLAUDE.md` | Assemble the spine → `AGENTS.md`; Claude's import pointer. |
@@ -60,6 +63,8 @@ direction checking.
    to `~/.claude/codex-relay/deep-review-prompt.md` (needed for `deep` mode).
 4. Adopt `THE-FLOW.md` as the SOP and `MEMORY-SYSTEM.md` as the memory convention.
 5. **Enable the guards:** `git config core.hooksPath .githooks` — the pre-commit hook runs `lint-methodology.sh` and blocks any commit that leaves `AGENTS.md` stale or the docs broken. The memory discipline ships as an on-demand skill at `.claude/skills/memory-system/`; copy it to `~/.claude/skills/` to make it available across all your repos.
+6. **Communication layer (optional, on by default):** the repo ships `.claude/output-styles/plain-technical.md` + `.claude/skills/{explain,brief,architect,product,peer,normal}/`. Set `"outputStyle": "Plain technical"` in the project's `.claude/settings.json` to turn the plain voice on for this repo; toggle it anytime with `/output-style`. Claude-only, per repo, kept out of `AGENTS.md`. See [`docs/communication.md`](docs/communication.md).
+7. **Enforce the guard in CI + declare posture:** copy `.github/workflows/methodology-guard.yml` into your repo's `.github/workflows/` so a stale rulebook or failing lint cannot merge (ADR-0003; a by-convention guard has been shown to fail open). At Phase 0 declare the **data posture** (`demo` | `production`); in `demo` posture keep the **promotion ledger** ([`docs/promotion-ledger.md`](docs/promotion-ledger.md)) and clear it before going to real data (ADR-0002).
 
 > **v1 assumptions:** builder = Claude, reviewer = Codex (one independent vendor). "Reviewer" is a
 > *role* — swappable later. See [`DECISIONS.md`](DECISIONS.md) for the full rationale and the v2 backlog.
