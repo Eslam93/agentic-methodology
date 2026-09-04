@@ -14,6 +14,12 @@
 
 -->
 
+## 2026-09-04 · baseline commit + drift fixes
+- **Shipped:** v1.4 + v1.5 committed as `40ff017`. Drift fixes (Tier 1): DECISIONS §2 / §6 / §8 / ledger #2 aligned with the later decisions; DoD Tier-2 row now reads 🔴 = 0 (CONCERNS with filed follow-ups merges, matching the gate + schema); design-note lite-lane line uses the blast-radius receipt, not "high confidence". `AGENTS.md` rebuilt.
+- **Merges:** n/a — docs, Tier 1 · `lint-methodology.sh` 0 errors.
+- **Decisions/ADRs:** DECISIONS v1.5.1 note.
+- **Next:** the v2 simplification pass (owner-led): delete a lot, simplify, change approaches.
+
 ## 2026-07-11 (later) · methodology upgrades from the Elm field review
 - **Shipped:** ADR-0002 (data posture demo/production + promotion ledger + gated flip) · ADR-0003 (CI-gated guard + verify-the-verifier canary + context-rot cross-ref sweep). New: `docs/promotion-ledger.md`, `.github/workflows/methodology-guard.yml`, `docs/adr/ADR-0002-*`, `docs/adr/ADR-0003-*`. Modified: `docs/constitution/definition-of-done.md` (posture + verify-the-verifier), `docs/phase-0.md`, `docs/minimal-core.md`, `README.md`, `DECISIONS.md` (v1.5). `AGENTS.md` rebuilt from the spine.
 - **Source:** the governed-insight (Elm) 3.5-week adoption review — scattered demo security-debt with no ledger, a by-convention guard that failed open on main, and repeated local false-greens.

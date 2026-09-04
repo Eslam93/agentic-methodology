@@ -5,12 +5,10 @@
 > re-deriving anything. One screen — if it grows, trim.
 
 ## Current state
-Two methodology changes built and lint-green, uncommitted in the working tree:
-- **COMMS-1** (communication layer): `.claude/output-styles/plain-technical.md`, `.claude/skills/{explain,brief,architect,product,peer,normal}/`, `docs/communication.md`, ADR-0001, design note.
-- **v1.5 upgrades** (from the Elm field review): ADR-0002 (data posture + `docs/promotion-ledger.md` + gated flip), ADR-0003 (`.github/workflows/methodology-guard.yml` CI guard + verify-the-verifier canary), DoD posture + canary edits, phase-0 + minimal-core wiring, DECISIONS v1.5. `AGENTS.md` rebuilt.
+v1.4 + v1.5 are committed (`40ff017`). Drift fixes are applied in the working tree and lint-green, **uncommitted**: DECISIONS §2 / §6 / §8 / ledger #2, the DoD Tier-2 row (🔴 = 0), the design-note lite-lane line, DECISIONS v1.5.1 note, `AGENTS.md` rebuilt.
 
 ## Next task
-Awaiting direction. Owner to review and commit COMMS-1 + the v1.5 upgrades. Optional follow-up: port the one-shot mode semantics back to the standalone communication-modes pack.
+The **v2 simplification pass** (owner-led): delete a lot, simplify, change approaches. Candidate list from the 2026-09-04 read-through, not yet acted on: `/clarify` and the relay command are referenced but not shipped · `lint-methodology.sh` re-implements the build instead of reusing it · the evidence calculus is restated in ~5 places · README table omits minimal-core / escape-log / the schema · pin markdown to LF in `.gitattributes`.
 
 ## Open threads / watch-outs
 - The standalone communication-modes pack still uses persistent (not one-shot) mode wording — intentional divergence for now.
@@ -18,7 +16,7 @@ Awaiting direction. Owner to review and commit COMMS-1 + the v1.5 upgrades. Opti
 - Deferred 🟡: an optional `lint-methodology.sh` soft-check that a present output style has `keep-coding-instructions: true`.
 
 ## How to resume
-Review the diff in `D:\SourceCode\methodology` (`git status`), read the ADRs (0001/0002/0003) + `docs/design-notes/COMMS-1-communication-layer.md`, run `sh build-constitution.sh && sh lint-methodology.sh` to confirm green, then commit if approved.
+`git log --oneline -3` (expect `40ff017` or later) · `git status` shows the uncommitted drift fixes · `sh build-constitution.sh && sh lint-methodology.sh` must be green · then continue the simplification pass from the candidate list above.
 
 ## Prep-for-compact checklist (run at Step 7 before a compact)
 - [ ] worklog appended

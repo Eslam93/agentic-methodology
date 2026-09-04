@@ -37,7 +37,7 @@ Both dials are **builder-proposed at pickup** and **fail-safe** (round toward *m
 | Tier | What | Ceremony | Definition of Done |
 |---|---|---|---|
 | **1 · Fast-track** | low-risk, reversible, small | skip ADR/design-note/plan-relay; code relay optional | lint + affected tests; **batched** into merge digest |
-| **2 · Standard** | normal feature/fix/refactor | full 6-step flow | lint + full suite vs real stack + CI green + coverage + reviewer consensus |
+| **2 · Standard** | normal feature/fix/refactor | the full flow (steps 1–7; Step 7 close-out added in v1.3) | lint + full suite vs real stack + CI green + coverage + reviewer consensus (🔴 = 0) |
 | **3 · Critical** | high-risk *or* hard-to-reverse *or* architecture-touching | full flow **+ ADR + `deep` relay + rollback plan + owner direction pre-check** | Tier 2 + ADR + deep-review consensus + rollback verified |
 
 - **Tier-3 trigger set = HARD FLOOR (auto-escalate):** `{auth, authz, payments, secrets, data migration, public API/contract, security control, cross-module architecture}`. Builder may tier **up** freely; **cannot** tier a trigger-area change **down**.
@@ -105,7 +105,7 @@ Both dials are **builder-proposed at pickup** and **fail-safe** (round toward *m
 - **AI⇄AI ≈ ~2 _correlated_ votes** — cross-family blind-spot overlap ≈ same-family (Claude & Codex miss roughly the same bugs). So the Machine carries correctness.
 - **Tiered:**
   - **T3:** property / fuzz / metamorphic tests required; **human ratifies the golden answers** (ratify-don't-author — blocks AI tests enshrining current-buggy behavior).
-  - **T2:** standard tests + property tests where the input space is non-trivial; human ratifies golden answers for core logic.
+  - **T2:** standard tests + property tests where the input space is non-trivial. *(Human-ratified golden answers are a **Tier-3** bar per the DoD; T2 logic that needs them is a re-tier signal — the original "human ratifies for core logic at T2" wording is superseded.)*
   - **T1:** example tests fine.
 - **TDD delivered as a _test-map_, not recited procedure** ("do TDD" prose *raised* regressions 6→10%; a test-map cut them 72%): the design note lists the **existing tests that cover the change (must stay green) + the new tests each acceptance criterion requires.**
 - **DoD line:** *"AI⇄AI consensus is necessary, not sufficient — correctness isn't done until the Machine passes, and a human owns the golden answers for critical logic."*
@@ -122,7 +122,7 @@ Both dials are **builder-proposed at pickup** and **fail-safe** (round toward *m
 
 ## 8. Planning additions
 
-- **`/clarify` before planning** — *demand-driven and proportional* (invisible when crisp, a safety net when fuzzy): records a *Clarifications* section in the design note. Paired with a **plan confidence self-score (1–10)** that routes **≤ 6 → treat as fuzzy → human direction gate; ≥ 7 → proceed.** The number is a heuristic; the **clarify questions are the real signal** (visible, reviewer can challenge a dishonest score).
+- **`/clarify` before planning** — *demand-driven and proportional* (invisible when crisp, a safety net when fuzzy): records a *Clarifications* section in the design note. The direction gate is routed by the **uncertainty type** (product-value / security / data-contract) **plus any unresolved clarify question** — visible signals a reviewer can challenge. The **1–10 confidence self-score is optional color, not a gate** *(originally routed ≤ 6 → fuzzy; demoted in v1.1.1 because a self-score is gameable)*.
 - **EARS acceptance criteria** (`WHEN/WHILE/IF … THE SYSTEM SHALL …`) in design notes — **Tier 2/3** (skip Tier 1). Each EARS line → one test in the test-map.
 
 ---
@@ -132,7 +132,7 @@ Both dials are **builder-proposed at pickup** and **fail-safe** (round toward *m
 | # | Item | Decision |
 |---|---|---|
 | 1 | Severity-tiered merge digest | ✅ adopt |
-| 2 | `/clarify` + confidence-score (demand-driven) | ✅ adopt |
+| 2 | `/clarify` + confidence-score (demand-driven) | ✅ adopt *(score later demoted to optional color — v1.1.1)* |
 | 3 | EARS acceptance criteria (Tier 2/3) | ✅ adopt |
 | 4 | Per-dimension reviewer passes | ⏸ **park** → lenses baked into the single review prompt; decorrelation handled by the Machine plane |
 | 5 | RADAR-style auto-classifier | ⏸ **park → v2** (v1 = hard-floor + builder-proposes + reviewer-audits) |
@@ -182,6 +182,8 @@ Both dials are **builder-proposed at pickup** and **fail-safe** (round toward *m
 - **🔧 v1.4 — communication layer (COMMS-1, ADR-0001):** added a Claude-only **voice** layer on the output-style + skills surface — an always-on, project-scoped `plain-technical` output style (**on by adoption**, toggle via `/output-style`, `keep-coding-instructions: true`) + six **one-shot** mode commands (`/explain /brief /architect /product /peer /normal`, each shaping a single response then reverting to the baseline; `/normal` repurposed to a one-shot default-voice escape hatch). Kept **out of `AGENTS.md`** (voice = builder↔human; the reviewer never needs it) and **out of THE-FLOW** (a Phase-0 provisioning add-on + a `minimal-core.md` hardening line, never a per-task step). Rationale: protects the readability of the owner's direction/merge reading — the one job the method keeps the human for. Codex reviewer unaffected (still verdict-first).
 
 - **🔧 v1.5 — demo/production posture + enforced verification (ADR-0002, ADR-0003; field lessons from the governed-insight / Elm adoption):** **(1)** a declared **data posture** (`demo` | `production`) set at Phase 0 and carried in the DoD spine — the DoD bar and reviewer scope flex by posture; **(2)** a required **promotion ledger** (`docs/promotion-ledger.md`) logging every "because demo" shortcut, with a **gated demo→production flip** (empty or owner-waived before promotion) — the specialized cousin of the escape log, born from a real adoption where deferred security debt scattered across five docs with no single restore checklist; **(3)** **CI-gate the methodology guard** (rebuild AGENTS.md + `git diff --exit-code` + lint) as a **required** step, shipped as `.github/workflows/methodology-guard.yml` — the by-convention guard was shown to fail open on a real project; **(4)** **verify the verifier** — a canary (deliberately-failing test the runner must report red) added to the cross-cutting DoD, after repeated local false-greens; **(5)** the Phase-0 context-rot audit now sweeps rulebook cross-references for consistency after a rename.
+
+- **🔧 v1.5.1 — drift fixes (a clean baseline before the v2 simplification pass):** aligned §2 (the flow has 7 steps), §6 (human-ratified golden answers are a T3 bar, not T2), §8 + ledger #2 (the confidence score is color, not a gate — as decided in v1.1.1), the DoD Tier-2 row (🔴 = 0 is the bar; CONCERNS with filed follow-ups merges, matching the gate + the schema), and the design-note lite-lane line (blast-radius receipt, not "high confidence").
 
 ## Evidence base (for the docs' credibility)
 

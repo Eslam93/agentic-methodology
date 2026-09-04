@@ -34,7 +34,7 @@
 - **Uncertainty type:** product-value | UX | data-contract | architecture | security | testability | dependency/env | unknown-code-area · **Confidence (1–10):** <n> *(optional color)*  *(direction gate fires when type ∈ {product-value, security, data-contract} **or** `/clarify` is unresolved — the **type + clarify** are the gate, never the gameable number.)*
 
 ## C · Plan consensus (relay)
-- **Lane:** full reconcile | **lite** (non-trigger T2, high confidence, clean `/clarify` → single cold-criteria pass + code relay only)
+- **Lane:** full reconcile | **lite** (non-trigger T2, blast-radius receipt consistent with T2, clean `/clarify` → single cold-criteria pass + code relay only)
 - **Cold-derived criteria diff:** <reviewer independently derives acceptance criteria from the task statement, then diffs vs the builder's EARS — list divergences; a divergence is a DIRECTION flag>
 - **Verdict:** PASS | CONCERNS | FAIL   ·   🔴 <n>  🟡 <n>  ⚪ <n>
 - **Reconciliation:** <folded must-fixes; pushback is evidence-only — **independent (reviewer recompute / un-authored spec / failing check) outweighs builder-produced ("my test passes" is weak alone); a citation never settles alone**; an unsubstantiated 🔴 → 🟡 pending; deadlocks (or fast consensus on critical-path) escalated>
