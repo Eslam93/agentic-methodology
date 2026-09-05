@@ -93,7 +93,7 @@ trunk=$(git -C "$R" rev-parse --abbrev-ref HEAD)
 gitc() { git -C "$R" -c user.email=t@t -c user.name=t "$@"; }
 SIDA="sessionAAAAAAAA1"; SIDB="sessionBBBBBBBB2"
 # seal_ <task> [session]: write a brief, seal it, and bind it to that session, through the real tool
-seal_() { rm -rf "$R/working/$1"; mkdir -p "$R/working/$1"; printf '# brief %s\noutcome: tests stay whole\n' "$1" > "$R/working/$1/brief.md"; (cd "$R" && CLAUDE_CODE_SESSION_ID="${2:-$SIDA}" bash "$HERE/baseline.sh" seal "$1" >"$T/seal.out" 2>&1); }
+seal_() { rm -rf "$R/working/$1"; mkdir -p "$R/working/$1"; printf '# brief %s\noutcome: tests stay whole\n' "$1" > "$R/working/$1/brief.md"; (cd "$R" && CLAUDE_CODE_SESSION_ID="${2:-$SIDA}" bash "$HERE/baseline.sh" seal "$1" "${3:-2}" >"$T/seal.out" 2>&1); }
 weaken_commit() { printf 'test("a", () => { expect(1).toBe(1); });\n' > "$R/tests/x.test.js"; gitc commit -qam weaken 2>/dev/null; }
 for shell in $shells; do
   if [ "$shell" = ps1 ]; then cwdv="$(winpath "$R")"; else cwdv="$R"; fi
@@ -182,10 +182,10 @@ git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
 
 echo "baseline.sh"
 mkdir -p "$R/working/task-2"; printf -- '---\nowner: someone\n---\n\n# brief\n' > "$R/working/task-2/brief.md"; printf 'wip\n' > "$R/owner-wip.txt"
-(cd "$R" && bash "$HERE/baseline.sh" seal task-2 >/dev/null 2>&1)
+(cd "$R" && bash "$HERE/baseline.sh" seal task-2 2 >/dev/null 2>&1)
 total=$((total+1)); if grep -q "owner-wip.txt" "$R/working/task-2/pre-existing.txt" && grep -q '^pre_existing: 1$' "$R/working/task-2/brief.md"; then echo "  ok    seal records a pre-existing untracked file"; else echo "  FAIL  seal missed the pre-existing file"; fails=$((fails+1)); fi
 total=$((total+1)); if grep -q '^owner: someone$' "$R/working/task-2/brief.md"; then echo "  ok    seal keeps front matter the brief already had"; else echo "  FAIL  seal dropped existing front matter"; fails=$((fails+1)); fi
-(cd "$R" && bash "$HERE/baseline.sh" seal task-2 >"$T/reseal.out" 2>&1); rc=$?
+(cd "$R" && bash "$HERE/baseline.sh" seal task-2 2 >"$T/reseal.out" 2>&1); rc=$?
 total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "does not move" "$T/reseal.out"; then echo "  ok    seal refuses to re-seal a sealed brief"; else echo "  FAIL  seal re-sealed a sealed brief"; fails=$((fails+1)); fi
 (cd "$R" && bash "$HERE/baseline.sh" check task-2 >/dev/null 2>&1); rc=$?
 total=$((total+1)); if [ "$rc" -eq 0 ]; then echo "  ok    check passes on an unchanged brief"; else echo "  FAIL  check failed on an unchanged brief"; fails=$((fails+1)); fi
@@ -193,6 +193,55 @@ printf 'changed after approval\n' >> "$R/working/task-2/brief.md"
 (cd "$R" && bash "$HERE/baseline.sh" check task-2 >"$T/check.out" 2>&1); rc=$?
 total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "BRIEF CHANGED" "$T/check.out"; then echo "  ok    check detects a brief changed after approval"; else echo "  FAIL  check missed a changed brief"; fails=$((fails+1)); fi
 rm -f "$R/owner-wip.txt"
+
+echo "the Tier 3 review contract"
+# A Tier 3 task is done when one independent review completed, or when the owner waived it out
+# loud. Offered, selected, started, and failed are none of those. check is the point where that is
+# decided, because it already runs at hand-back. Tier 1 and 2 are untouched.
+tcase() { total=$((total+1)); if [ "$2" = 1 ]; then echo "  ok    $1"; else echo "  FAIL  $1"; fails=$((fails+1)); fi; }
+mkt() { rm -rf "$R/working/$1"; mkdir -p "$R/working/$1"; printf '# brief %s\n' "$1" > "$R/working/$1/brief.md"; (cd "$R" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal "$1" "$2" >/dev/null 2>&1); }
+bl() { (cd "$R" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" "$@" >"$T/bl.out" 2>&1); }
+mkdir -p "$R/working/no-tier"; printf '# brief\n' > "$R/working/no-tier/brief.md"
+(cd "$R" && bash "$HERE/baseline.sh" seal no-tier >"$T/bl.out" 2>&1); rc=$?
+tcase "seal refuses a task with no tier" "$( { [ "$rc" -ne 0 ] && grep -q 'needs the tier' "$T/bl.out"; } && echo 1 || echo 0)"
+# A brief that arrives at the agreement already carrying its own review record must not keep it:
+# that is the one way a builder could turn "no review" into "waived" without anyone saying so.
+rm -rf "$R/working/preload"; mkdir -p "$R/working/preload"
+printf -- '---\nreview_status: waived-by-owner\nreview_waiver: nobody said this\n---\n# brief\n' > "$R/working/preload/brief.md"
+(cd "$R" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal preload 3 >/dev/null 2>&1)
+bl check preload; rc=$?
+tcase "seal strips a review record the brief arrived with" "$( { [ "$rc" -ne 0 ] && grep -q 'TIER 3 CONTRACT INCOMPLETE' "$T/bl.out"; } && echo 1 || echo 0)"
+# A brief with no tier line cannot have its contract checked, and that is not a pass
+mkt notier 3; awk '!/^tier: /' "$R/working/notier/brief.md" > "$T/nt.tmp" && mv "$T/nt.tmp" "$R/working/notier/brief.md"
+bl check notier; rc=$?
+tcase "a brief with no tier fails the check rather than passing" "$( { [ "$rc" -ne 0 ] && grep -q 'TIER NOT RECORDED' "$T/bl.out"; } && echo 1 || echo 0)"
+# Only the two routes the kit treats as independent are accepted
+mkt route 3; bl review route completed my-own-eyeballs "looked at it"; rc=$?
+tcase "an unknown review route is refused"             "$( { [ "$rc" -ne 0 ] && grep -q 'unknown review route' "$T/bl.out"; } && echo 1 || echo 0)"
+# Case 3: neither review nor waiver. The contract is not silently satisfied by reaching hand-back.
+mkt t3a 3; bl check t3a; rc=$?
+tcase "tier 3 with neither review nor waiver fails the hand-back check" "$( { [ "$rc" -ne 0 ] && grep -q 'TIER 3 CONTRACT INCOMPLETE' "$T/bl.out"; } && echo 1 || echo 0)"
+# Case 5 and 6: a review that was only offered, or that failed, leaves nothing to record
+bl review t3a completed code-review; rc=$?
+tcase "a completed review with no result is refused"  "$( { [ "$rc" -ne 0 ] && grep -q 'carries its result' "$T/bl.out"; } && echo 1 || echo 0)"
+bl review t3a completed test-guide "walked the steps"; rc=$?
+tcase "the local run is refused as an independent review" "$( { [ "$rc" -ne 0 ] && grep -q 'not an independent review' "$T/bl.out"; } && echo 1 || echo 0)"
+bl review t3a waived; rc=$?
+tcase "a waiver with no owner words is refused"        "$( { [ "$rc" -ne 0 ] && grep -q "owner's own words" "$T/bl.out"; } && echo 1 || echo 0)"
+# Case 1: a completed independent review satisfies it
+bl review t3a completed codex-relay "VERDICT: PASS 0 red"; bl check t3a; rc=$?
+tcase "tier 3 with a completed review passes"          "$( { [ "$rc" -eq 0 ] && grep -q 'independent review completed via codex-relay' "$T/bl.out"; } && echo 1 || echo 0)"
+bl review t3a waived "the owner said skip it"; rc=$?
+tcase "the review record does not move once written"   "$( { [ "$rc" -ne 0 ] && grep -q 'already records' "$T/bl.out"; } && echo 1 || echo 0)"
+# Case 2: an explicit waiver satisfies it, and reads differently from a review
+mkt t3b 3; bl review t3b waived "owner: skip review, I have read it myself"; bl check t3b; rc=$?
+tcase "tier 3 waived by the owner passes and says so"  "$( { [ "$rc" -eq 0 ] && grep -q 'WAIVED by the owner' "$T/bl.out"; } && echo 1 || echo 0)"
+# Case 4: lower tiers are untouched
+mkt t2 2; bl check t2; rc=$?
+tcase "tier 2 with no review still passes"             "$( { [ "$rc" -eq 0 ] && grep -q 'no independent review is required' "$T/bl.out"; } && echo 1 || echo 0)"
+mkt t1 1; bl check t1; rc=$?
+tcase "tier 1 with no review still passes"             "$( [ "$rc" -eq 0 ] && echo 1 || echo 0)"
+rm -rf "$R/working/t3a" "$R/working/t3b" "$R/working/t2" "$R/working/t1" "$R/working/no-tier" "$R/working/preload" "$R/working/notier" "$R/working/route"
 
 echo "resume-brief"
 # The brief a session gets back after a compaction is the one it was carrying, read from the
@@ -206,7 +255,7 @@ printf 'working/\n' > "$W/.gitignore"; printf 'x\n' > "$W/file.txt"
 git -C "$W" add -A && git -C "$W" -c user.email=t@t -c user.name=t commit -qm init 2>/dev/null
 printf '# status\nlast session: hooks tested\n' > "$W/working/status.md"
 mk_brief()  { mkdir -p "$W/working/$1"; printf '# brief\nMARKER-%s survives compaction\n' "$1" > "$W/working/$1/brief.md"; }
-seal_w()    { (cd "$W" && CLAUDE_CODE_SESSION_ID="$2" bash "$HERE/baseline.sh" seal "$1" >/dev/null 2>&1); }
+seal_w()    { (cd "$W" && CLAUDE_CODE_SESSION_ID="$2" bash "$HERE/baseline.sh" seal "$1" "${3:-2}" >/dev/null 2>&1); }
 said()      { grep -q "$1" "$T/out"; }
 check_()    { total=$((total+1)); if [ "$2" = 1 ]; then echo "  ok    $1"; else echo "  FAIL  $1"; fails=$((fails+1)); fi; }
 # A relay brief and an unrelated task brief, both dated 2030, so recency would prefer either over

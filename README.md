@@ -53,7 +53,7 @@ Four rules, ten skills, four hooks, six tools. Install is a copy.
 | **`/test-guide`** `/pr` `/board` | plain-English test steps that double as the pull request's "How to test"; a well-formed pull request; a tracker update that proposes and stops |
 | **`/explain`** `/summarize` | the real version at a named audience, with a verify mode that re-checks a claim against the current tree; and the short version, without losing the caveats |
 | **four hooks** | a secret value is blocked before it is written; a test weakened, skipped, or deleted blocks the turn, measured from the baseline of the task this session carries when there is one, and from `HEAD` otherwise; a destructive-command list that starts empty and grows from incidents; that same task's brief re-read after a compaction |
-| **`baseline.sh`** | seals the task's starting point into the agreed brief at the owner's yes, the approval time, the digest of the agreed text, and the commit of every checkout, beside a list of the files that were already dirty; and, when the host gives a session id, binds that brief to the Claude session, so both hooks know which agreement this session is carrying instead of taking the newest file. Unbound, both fall back and say so |
+| **`baseline.sh`** | seals the task's starting point into the agreed brief at the owner's yes, the approval time, the tier, the digest of the agreed text, and the commit of every checkout, beside a list of the files that were already dirty; and, when the host gives a session id, binds that brief to the Claude session, so both hooks know which agreement this session is carrying instead of taking the newest file. Unbound, both fall back and say so. `check` at hand-back reads it all back, and refuses a Tier 3 task with neither a completed independent review nor an owner's waiver |
 | **`verify.sh`** | the checks that exist here, a canary that must fail, and a hook test suite that proves the guards can go red |
 
 Every hook ships in PowerShell and in Bash. Windows was the first platform, not an afterthought.
@@ -103,7 +103,8 @@ disposable folder.
    migration, data deletion, anything reaching production, two failed attempts at the same thing.
 3. **Size the job with a tier, and a hard floor.** Auth, payments, secrets, migrations, public
    contracts, security controls, and cross-module architecture are always the top tier and cannot
-   be tiered down.
+   be tiered down. The top tier finishes one of two ways: one independent review completed, or the
+   owner waived it in their own words. Reaching the end without either is not a waiver.
 4. **Evidence settles findings, in a fixed order.** A deterministic failing check, then the
    reviewer's own recompute, then a spec line nobody in the loop wrote, then a builder-produced
    result, then model judgment alone, which settles nothing. A citation never settles a finding by

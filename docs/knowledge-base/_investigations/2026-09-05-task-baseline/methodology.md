@@ -33,11 +33,14 @@ reverify_when: On any change to baseline.sh, either verify-on-finish hook, or ho
 ## The record
 
 `baseline.sh seal <task>` writes front matter at the top of `working/<task>/brief.md`, the file the
-owner approved, and keeps any front matter the brief already had:
+owner approved, and keeps any front matter the brief already had (D-19: the command takes the tier,
+`seal <task> <tier>`, records it as a `tier:` line, and strips any `review_` key the brief arrived
+with):
 
 ```yaml
 task: <slug>
 approved_at: <UTC, ISO seconds>
+tier: <1|2|3>                                 # added by D-19
 baseline_commit.<checkout>: <full commit>     # one line per checkout
 brief_sha256: <sha256 of the text below the front matter>
 pre_existing: <count>

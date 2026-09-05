@@ -15,7 +15,8 @@ nothing. Match the beats to the size of the job. Nobody writes a plan to rename 
 
 **State the tier in one line the owner can override**, from the standing orders' table. The highest
 signal wins: files touched, a new dependency or contract, design ambiguity, a hard-floor area. Tier 1
-has no stop. Tier 2 stops once. Tier 3 stops once, adds a decision entry, and gets review.
+has no stop. Tier 2 stops once. Tier 3 stops once, adds a decision entry, and does not finish until
+one independent review has completed or the owner has waived it in their own words.
 
 ## 1 · Intake: get the item from wherever it lives
 
@@ -78,7 +79,7 @@ A bottom line of what you are about to do, then the details, in the house writin
 Then stop. **That is the only approval you ask for.** If they change something, fold it in and
 restate only what changed. Write the agreed summary and checklist to `working/<task>/brief.md`:
 after a compaction the `resume-brief` hook reads it back, so the build continues from the agreement
-rather than from a summary. Then seal it: `bash .claude/tools/baseline.sh seal <task>` writes the
+rather than from a summary. Then seal it: `bash .claude/tools/baseline.sh seal <task> <tier>` writes the
 approval time, the digest of the agreed text, and the commit every checkout is at into that brief's
 own front matter, lists the files already dirty in `working/<task>/pre-existing.txt`, and binds that
 brief to this session in `working/active-tasks/<session id>`. Those are one event: this is the
@@ -129,10 +130,27 @@ Offer these and run what they pick, in any combination:
 Defaults: Tier 1 the local run; Tier 2 the review plus the local run; Tier 3 all three. Pushback on
 a finding is evidence-only.
 
+**On Tier 3 the menu is still theirs, but one line of it is not optional.** The first two are
+independent reviews, because somebody other than the builder's own pass does the judging; the local
+run is not, because the builder runs it. A Tier 3 task finishes when one independent review has
+completed, or when the owner has said in their own words to go without one. Record whichever
+happened, once, as soon as it happens:
+
+```
+bash .claude/tools/baseline.sh review <task> completed <code-review|codex-relay> "<the verdict line>"
+bash .claude/tools/baseline.sh review <task> waived "<what the owner said>"
+```
+
+A review that was offered, chosen, started, or that failed is not a completed review, and never
+becomes a waiver by being forgotten. If the owner has not said either way by the time the work is
+otherwise done, ask once, plainly: run one of the two, or waive it.
+
 ## 7 · Hand back, in this order
 
-a. `bash .claude/tools/baseline.sh check <task>`: a brief changed since approval, or a task that is
-   no longer the one this session carries, is a finding of its own, reported before the checklist.
+a. `bash .claude/tools/baseline.sh check <task>`: a brief changed since approval, a task that is no
+   longer the one this session carries, or a Tier 3 task with neither a review nor a waiver, is a
+   finding of its own, reported before the checklist. It exits non-zero on any of them, and the
+   Tier 3 line is the one to settle before going further, not to report and step past.
    Then `git diff --name-only` before reading any content. Did this change something it should not
    have?
 b. Read the test diff before the code diff, then the whole diff for things nobody asked for.

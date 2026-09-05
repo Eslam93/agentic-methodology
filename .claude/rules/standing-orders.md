@@ -25,7 +25,7 @@ Every piece of work gets a **tier**, stated in one line the owner can override:
 |---|---|---|
 | 1 | small, low-risk, reversible | none. Say what you will do, then do it |
 | 2 | a normal feature, fix, or refactor | one message after Understand: the summary, the outcome checklist, the branch sentence |
-| 3 | high-risk, hard to reverse, or architecture-touching | the same message, plus a decision entry in the knowledge base, plus review |
+| 3 | high-risk, hard to reverse, or architecture-touching | the same message, plus a decision entry in the knowledge base, plus one independent review or an explicit owner waiver |
 
 **The hard floor:** auth, authorization, payments, secrets, data migration, a public API or
 contract, a security control, cross-module architecture. Any of these is Tier 3 and cannot be
@@ -35,7 +35,7 @@ After the yes, **build uninterrupted.** Pause only for the stop-list: a Tier-3 a
 unexpectedly · a new dependency · a schema or migration change · data deletion · anything reaching
 production or an unfamiliar remote · two failed attempts at the same thing · scope growing past the
 agreed boundary. Everything else waits for the hand-back. Before any autonomous run, seal the task
-baseline (`baseline.sh seal`), or commit a checkpoint when there is no brief to seal: git is the
+baseline (`baseline.sh seal <task> <tier>`), or commit a checkpoint when there is no brief: git is the
 undo, not the session's own checkpoints. Task commits stay on task-owned paths; files dirty before
 the task belong to the owner.
 
@@ -54,7 +54,13 @@ the task belong to the owner.
   blocking bucket.
 - **The review menu after a build:** a fresh-context `/code-review`, a Codex cold pass through
   `/codex-relay`, a local run with `/test-guide`. Any combination. Defaults: Tier 1 the local run,
-  Tier 2 review plus the local run, Tier 3 all three. Pushback on a finding is evidence-only.
+  Tier 2 review plus the local run, Tier 3 all three. The first two are independent reviews; the
+  local run is not, because the builder runs it. Pushback on a finding is evidence-only.
+- **Tier 3 finishes one of two ways: one independent review completed, or the owner waived it in
+  their own words.** Offered, chosen, started, and failed are none of those, and reaching the
+  hand-back is not a waiver. Record which it was with `baseline.sh review`; `check` reads it back.
+  The owner still picks the route, and may still choose no review, but now that choice is written
+  down instead of being an absence.
 - **For critical logic a human confirms the expected values.** A test must never enshrine
   current-buggy behaviour.
 

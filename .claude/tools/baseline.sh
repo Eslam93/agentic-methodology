@@ -2,8 +2,10 @@
 # The task baseline: the approved starting point, written into the task's own brief, and the
 # binding that makes that brief the active task for this Claude session.
 #
-#   bash .claude/tools/baseline.sh seal  <task>   record the approval and bind it to this session
-#   bash .claude/tools/baseline.sh check <task>   brief unchanged; commits reachable; still active
+#   bash .claude/tools/baseline.sh seal   <task> <tier>              record the approval, bind the session
+#   bash .claude/tools/baseline.sh review <task> completed <route> <evidence>
+#   bash .claude/tools/baseline.sh review <task> waived <owner's words>
+#   bash .claude/tools/baseline.sh check  <task>                     is the task fit to hand back
 #
 # Run it from the repository root (shape A) or the workspace root (shape B; the .workspace marker
 # wins when both exist, as in layout.sh).
@@ -32,10 +34,10 @@
 
 set -uo pipefail
 
-usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 die()   { echo "baseline.sh: $*" >&2; exit 1; }
 
-cmd="${1:-}"; task="${2:-}"
+cmd="${1:-}"; task="${2:-}"; arg3="${3:-}"
 [ -z "$cmd" ] && usage
 [ -z "$task" ] && usage
 printf '%s' "$task" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || die "task name must be one plain path segment: letters, digits, dot, dash, underscore"
@@ -56,8 +58,10 @@ fi
 dir="$root/working/$task"; brief="$dir/brief.md"
 [ -f "$brief" ] || die "no brief at working/$task/brief.md; write the agreed brief first"
 
-# The seal's own keys. Everything else in an existing front matter is kept as it was.
-SEAL_KEYS='^(task|approved_at|baseline_commit(\.[^:]*)?|brief_sha256|pre_existing):'
+# The keys this tool owns. Everything else in an existing front matter is kept as it was, but these
+# are stripped and rewritten at seal, so a brief cannot arrive at the agreement already carrying its
+# own review record: only `review` writes one, after the task exists.
+SEAL_KEYS='^(task|approved_at|tier|baseline_commit(\.[^:]*)?|brief_sha256|pre_existing|review_[a-z]+):'
 SESSION_RE='^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$'
 
 front_matter() { # the lines between the opening and closing --- , or nothing
@@ -82,6 +86,11 @@ printf '%s' "$session" | grep -Eq "$SESSION_RE" || session=""
 
 case "$cmd" in
   seal)
+    case "$arg3" in
+      1|2|3) ;;
+      "") die "seal needs the tier: baseline.sh seal $task <1|2|3>. It is the tier stated in the agree message, and Tier 3 carries the review contract" ;;
+      *) die "tier must be 1, 2, or 3" ;;
+    esac
     if [ "$sealed" = 1 ]; then
       echo "baseline.sh: working/$task/brief.md is already sealed, and a seal does not move." >&2
       echo "A changed agreement is a new task: write the new brief under working/<new-task>/ and seal that one," >&2
@@ -110,6 +119,7 @@ case "$cmd" in
       echo "---"
       echo "task: $task"
       echo "approved_at: $when"
+      echo "tier: $arg3"
       printf '%s\n' "${lines[@]}"
       echo "brief_sha256: $sum"
       echo "pre_existing: $n"
@@ -117,8 +127,9 @@ case "$cmd" in
       echo "---"
       body "$brief"
     } > "$brief.tmp" && mv "$brief.tmp" "$brief" && mv "$pre.tmp" "$pre" || die "could not write working/$task/brief.md"
-    echo "sealed working/$task/brief.md at $when"
+    echo "sealed working/$task/brief.md at $when, tier $arg3"
     printf '  %s\n' "${lines[@]}"
+    [ "$arg3" = 3 ] && echo "  Tier 3: one independent review must be recorded before hand-back, or an explicit owner waiver"
     # bind it to this session, only now that the seal is on disk
     if [ -n "$session" ]; then
       ptr="$root/working/active-tasks/$session"
@@ -140,6 +151,48 @@ case "$cmd" in
     fi
     if [ "$n" -eq 0 ]; then echo "  working tree clean: nothing pre-existing"
     else echo "  $n pre-existing change(s) recorded in working/$task/pre-existing.txt; they belong to the owner:"; sed 's/^/    /' "$pre"; fi
+    ;;
+
+  review)
+    # The Tier 3 contract, recorded once: a review that actually finished, or a waiver the owner
+    # actually gave. Nothing here can tell whether either really happened; what it can do is make
+    # the two different, dated, and visible to whoever reads the brief later.
+    [ "$sealed" = 1 ] || die "working/$task/brief.md carries no baseline; seal it at the owner's yes"
+    have=$(printf '%s\n' "$fm" | grep -E '^review_status:' | head -1 | awk '{print $NF}')
+    [ -n "$have" ] && die "working/$task/brief.md already records review_status: $have. One record per task; it does not move"
+    when=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    case "$arg3" in
+      completed)
+        route="${4:-}"
+        # An allow-list, not a deny-list: the kit treats exactly two routes as independent, and a
+        # name nobody recognises is not evidence that somebody independent looked.
+        case "$route" in
+          code-review|codex-relay) ;;
+          "") die "which review: baseline.sh review $task completed <code-review|codex-relay> <evidence>" ;;
+          test-guide|local-run|local) die "the local run with /test-guide is not an independent review: the builder runs it. Use code-review or codex-relay" ;;
+          *) die "unknown review route '$route'. The kit treats two as independent: code-review, a fresh context that never saw the reasoning, and codex-relay, the cold pass. Adding a third is a decision, not an argument" ;;
+        esac
+        if [ $# -ge 4 ]; then shift 4; else shift $#; fi
+        evidence="$*"
+        [ -z "$evidence" ] && die "a completed review carries its result: the verdict line, the finding counts, or what the reviewer returned. A review that was offered, started, or failed is not a completed review"
+        new="review_status: completed
+review_route: $route
+review_evidence: $(printf '%s' "$evidence" | tr '\n' ' ')
+review_at: $when" ;;
+      waived)
+        if [ $# -ge 3 ]; then shift 3; else shift $#; fi
+        words="$*"
+        [ -z "$words" ] && die "a waiver carries the owner's own words: baseline.sh review $task waived \"<what they said>\". Silence, a skipped menu, and reaching hand-back are not waivers"
+        new="review_status: waived-by-owner
+review_waiver: $(printf '%s' "$words" | tr '\n' ' ')
+review_at: $when" ;;
+      *) die "review takes completed or waived" ;;
+    esac
+    printf '%s\n' "$new" > "$dir/.review.tmp"
+    awk -v f="$dir/.review.tmp" 'NR==1 {print; next} !done && /^---$/ {while ((getline l < f) > 0) print l; print; done=1; next} {print}' "$brief" > "$brief.tmp" \
+      && mv "$brief.tmp" "$brief" && rm -f "$dir/.review.tmp" || die "could not write working/$task/brief.md"
+    printf '%s\n' "$new" | sed 's/^/  /'
+    echo "recorded in working/$task/brief.md"
     ;;
 
   check)
@@ -164,6 +217,34 @@ case "$cmd" in
     if [ -z "$session" ]; then echo "session: CLAUDE_CODE_SESSION_ID is absent here, so the active task cannot be read"
     elif [ "$(cat "$root/working/active-tasks/$session" 2>/dev/null)" = "working/$task/brief.md" ]; then echo "session: this is the active task for $session"
     else echo "session: this is NOT the active task for $session; the hooks will use another brief or their fallback"; bad=1; fi
+    # The Tier 3 contract. This runs at hand-back, which is the only point where "no review" and
+    # "not yet reviewed" become the same thing if nobody asks.
+    tier=$(printf '%s\n' "$fm" | grep -E '^tier:' | head -1 | awk '{print $NF}')
+    status=$(printf '%s\n' "$fm" | grep -E '^review_status:' | head -1 | awk '{print $NF}')
+    detail=$(printf '%s\n' "$fm" | grep -E '^(review_route|review_waiver):' | head -1 | cut -d' ' -f2-)
+    case "$tier" in
+      3)
+        case "$status" in
+          completed) echo "tier 3: independent review completed via $detail" ;;
+          waived-by-owner) echo "tier 3: independent review WAIVED by the owner: $detail" ;;
+          *) echo "TIER 3 CONTRACT INCOMPLETE: no independent review and no owner waiver is recorded."
+             echo "  Run one of the independent routes and record it, or ask the owner and record their waiver:"
+             echo "    bash .claude/tools/baseline.sh review $task completed <code-review|codex-relay> <result>"
+             echo "    bash .claude/tools/baseline.sh review $task waived \"<what the owner said>\""
+             bad=1 ;;
+        esac ;;
+      1|2)
+        if [ -n "$status" ]; then echo "tier $tier: independent review $status, which tier $tier does not require"
+        else echo "tier $tier: no independent review is required"; fi ;;
+      *)
+        # Not knowing the tier is not the same as passing: a Tier 3 task with no tier line would
+        # otherwise slip through the one check that asks about review.
+        echo "TIER NOT RECORDED: this brief carries no tier, so the Tier 3 contract cannot be checked."
+        echo "  It was sealed before the tier was recorded, or the line was removed. Add the tier the"
+        echo "  owner agreed, as one front-matter line, and run this again:"
+        echo "    tier: <1|2|3>"
+        bad=1 ;;
+    esac
     exit $bad
     ;;
 
