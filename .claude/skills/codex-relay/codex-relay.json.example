@@ -1,0 +1,19 @@
+{
+  "_help": "Copy to ./.claude/codex-relay.json (gitignored). Leave session_id empty; the first relay with `new` creates and saves it.",
+
+  "session_id": "",
+
+  "max_rounds": 5,
+
+  "verify": [
+    "<the lint command, e.g. npm run lint>",
+    "<the full test command against the real stack, e.g. npm test>",
+    "<how to bring the stack up, e.g. docker compose up -d --wait>"
+  ],
+
+  "env_notes": "<environment facts the reviewer needs: OS and shell, runtime and version, how the database and services are provided, that its network is sandboxed so external context is inlined, any secrets to flag but never print>",
+
+  "project_subdir": "",
+
+  "skip_git_check": false
+}

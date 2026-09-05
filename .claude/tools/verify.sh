@@ -27,7 +27,7 @@ cd "$ROOT" || { echo "cannot cd to $ROOT"; exit 1; }
 #   2026-09-05  BASELINE 400  set at the v2 build. The kit's three generic rules measured 229 lines;
 #               the project rule and the project's own traps get the rest before a raise is needed.
 BASELINE=400        # always-loaded rule lines: the kit's rules, the project rule, appended traps
-BUILTIN_SKILLS="code-review run"   # shipped by Claude Code; referenced, not installed
+BUILTIN_SKILLS="code-review run goal compact clear memory"   # Claude Code's own commands; referenced, not installed
 
 PASS=0; FAIL=0
 ok()   { printf '  PASS  %s\n' "$1"; PASS=$((PASS+1)); }
@@ -109,7 +109,9 @@ fi
 # --- 6 · every /skill referenced resolves -------------------------------------------------------
 if [ -d .claude/skills ]; then
   known="$(ls .claude/skills 2>/dev/null) $BUILTIN_SKILLS"
-  refs="$(grep -rhoE '`/[a-z][a-z-]{2,}`' .claude/rules .claude/skills docs/knowledge-base knowledge-base README.md START-HERE.md 2>/dev/null | tr -d '`' | sed 's|^/||' | sort -u)"
+  # Swept: the rules, the skills, and the two entry documents. Not the knowledge base, which may
+  # legitimately name a skill that was retired or is only proposed in 99-pending.md.
+  refs="$(grep -rhoE '`/[a-z][a-z-]{2,}`' .claude/rules .claude/skills README.md START-HERE.md 2>/dev/null | tr -d '`' | sed 's|^/||' | sort -u)"
   if [ -z "$refs" ]; then bad "every referenced /skill resolves" "the reference sweep matched nothing; the pattern is broken, not the tree"
   else
     missing=""; for r in $refs; do echo "$known" | tr ' ' '\n' | grep -qx "$r" || missing="$missing /$r"; done
