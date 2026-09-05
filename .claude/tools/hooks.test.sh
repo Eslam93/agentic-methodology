@@ -143,7 +143,7 @@ for shell in $shells; do
   sed "s|^baseline_commit.repo: .*|baseline_commit.repo: $moved|" "$R/working/task-1/brief.md" > "$T/mv" && mv "$T/mv" "$R/working/task-1/brief.md"
   total=$((total+1)); if grep -q "^baseline_commit.repo: $moved\$" "$R/working/task-1/brief.md"; then echo "  ok    $shell: the sealed baseline was moved to a later commit"; else echo "  FAIL  $shell: the tamper fixture did not apply"; fails=$((fails+1)); fi
   case_ "$shell: a moved baseline_commit blocks as tampering" 2 "$(run $shell verify-on-finish "$p_stop")"
-  total=$((total+1)); if grep -q "edited since it was approved" "$T/err"; then echo "  ok    $shell: the block says the approval was edited"; else echo "  FAIL  $shell: the tamper block does not say what happened"; fails=$((fails+1)); fi
+  total=$((total+1)); if grep -q "does not match the approval fields" "$T/err"; then echo "  ok    $shell: the block says the approval fields no longer match"; else echo "  FAIL  $shell: the tamper block does not say what happened"; fails=$((fails+1)); fi
   # the tier is inside the seal, which also closes the one-line edit that removed the Tier 3 contract
   git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
   seal_ task-1 "$SIDA" 3
@@ -154,14 +154,56 @@ for shell in $shells; do
   seal_ task-1 "$SIDA" 3
   (cd "$R" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" review task-1 waived "the owner said skip it" >/dev/null 2>&1)
   case_ "$shell: a review recorded after sealing is not tampering" 0 "$(run $shell verify-on-finish "$p_stop")"
-  # a brief sealed before seal_sha256 existed is a legacy seal, not a tampered one: it still measures
-  # from its own baseline, and must not be blocked as though it had been edited
+  # Deleting the one seal_sha256 line must not disarm the mechanism. A brief that records a baseline
+  # and carries no digest is refused, not trusted as a legacy seal: otherwise one deleted line would
+  # make the baseline movable and the tier rewritable again.
   git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
   seal_ task-1
   grep -v '^seal_sha256:' "$R/working/task-1/brief.md" > "$T/lg" && mv "$T/lg" "$R/working/task-1/brief.md"
+  case_ "$shell: a baseline with no seal digest is refused" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "no seal_sha256 at all" "$T/err"; then echo "  ok    $shell: the block says the digest is missing, not that a test changed"; else echo "  FAIL  $shell: the missing-digest block does not say why"; fails=$((fails+1)); fi
+  # and a brief with no baseline at all is still the ordinary no-task case, not a refusal
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  mkdir -p "$R/working/plain"; printf '# brief with no seal
+' > "$R/working/plain/brief.md"
+  mkdir -p "$R/working/active-tasks"; printf 'working/plain/brief.md
+' > "$R/working/active-tasks/$SIDA"
+  case_ "$shell: an unsealed brief falls back to HEAD, no refusal" 0 "$(run $shell verify-on-finish "$p_stop")"
+
+  # A test added during the task, weakened, and then RENAMED: git log with one pathspec calls the
+  # rename commit the add, so without following the rename the weakened file becomes its own base.
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-1
+  printf 'describe("r", () => {
+  test("one", () => {
+    expect(1).toBe(1);
+  });
+  test("two", () => {
+    expect(2).toBe(2);
+    expect(3).toBe(3);
+  });
+});
+' > "$R/tests/r.test.js"
+  git -C "$R" add -A; gitc commit -qm add-r 2>/dev/null
+  printf 'describe("r", () => {
+  test("one", () => {
+    expect(1).toBe(1);
+  });
+});
+' > "$R/tests/r.test.js"
+  gitc commit -qam weaken-r 2>/dev/null
+  git -C "$R" mv tests/r.test.js tests/r2.test.js; gitc commit -qm rename-r 2>/dev/null
+  case_ "$shell: added test weakened then renamed still blocked" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "then renamed" "$T/err"; then echo "  ok    $shell: the block names the rename it followed"; else echo "  FAIL  $shell: the rename was not followed"; fails=$((fails+1)); fi
+
+  # A tab after the colon must not quietly disarm the baseline: the digest trims, so the lookup must
+  # trim too, or the hook silently falls back to HEAD on a brief whose seal still verifies.
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-1
   weaken_commit
-  case_ "$shell: a legacy seal still measures from its baseline" 2 "$(run $shell verify-on-finish "$p_stop")"
-  total=$((total+1)); if grep -q "since the task baseline" "$T/err" && ! grep -q "edited since it was approved" "$T/err"; then echo "  ok    $shell: a legacy seal is not treated as tampering"; else echo "  FAIL  $shell: a legacy seal was treated as tampering"; fails=$((fails+1)); fi
+  awk '{ sub(/^baseline_commit\.repo: /, "baseline_commit.repo:	"); print }' "$R/working/task-1/brief.md" > "$T/tab" && mv "$T/tab" "$R/working/task-1/brief.md"
+  case_ "$shell: a tab after the colon still finds the baseline" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "since the task baseline" "$T/err"; then echo "  ok    $shell: the tabbed baseline was used, not skipped"; else echo "  FAIL  $shell: the tabbed baseline was skipped and the hook fell back"; fails=$((fails+1)); fi
   # Case 3: two sessions, one checkout. Session A sealed before the weakening, session B after it.
   # A must block and B must not, and neither may read the other's brief.
   git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
@@ -237,6 +279,18 @@ total=$((total+1)); if grep -q "owner-wip.txt" "$R/working/task-2/pre-existing.t
 total=$((total+1)); if grep -q '^owner: someone$' "$R/working/task-2/brief.md"; then echo "  ok    seal keeps front matter the brief already had"; else echo "  FAIL  seal dropped existing front matter"; fails=$((fails+1)); fi
 (cd "$R" && bash "$HERE/baseline.sh" seal task-2 2 >"$T/reseal.out" 2>&1); rc=$?
 total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "does not move" "$T/reseal.out"; then echo "  ok    seal refuses to re-seal a sealed brief"; else echo "  FAIL  seal re-sealed a sealed brief"; fails=$((fails+1)); fi
+# A seal must not be movable by making the brief look unsealed. Two routes: a byte before the fence,
+# which stops the front matter parsing, and deleting the approval lines outright.
+printf '\n' > "$T/pad"; cat "$R/working/task-2/brief.md" >> "$T/pad"; cp "$T/pad" "$R/working/task-2/brief.md"
+(cd "$R" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal task-2 2 >"$T/reseal2.out" 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "front matter cannot be read" "$T/reseal2.out"; then echo "  ok    seal refuses a sealed brief whose fence was moved"; else echo "  FAIL  a blank line before the fence allowed a re-seal"; fails=$((fails+1)); fi
+grep -v -E '^(task|approved_at|tier|baseline_commit|brief_sha256|pre_existing|seal_sha256|---):?' "$R/working/task-2/brief.md" > "$T/stripped" && cp "$T/stripped" "$R/working/task-2/brief.md"
+(cd "$R" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal task-2 2 >"$T/reseal3.out" 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "sealed once already" "$T/reseal3.out"; then echo "  ok    seal refuses a brief whose approval was stripped out"; else echo "  FAIL  stripping the approval allowed a re-seal"; fails=$((fails+1)); fi
+# and starting the task over properly, by removing the folder, is still allowed
+rm -rf "$R/working/task-2"; mkdir -p "$R/working/task-2"; printf '# brief task-2 again\n' > "$R/working/task-2/brief.md"
+(cd "$R" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal task-2 2 >"$T/reseal4.out" 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -eq 0 ]; then echo "  ok    removing the task folder allows the task to be agreed again"; else echo "  FAIL  a genuinely new agreement was refused"; fails=$((fails+1)); cat "$T/reseal4.out"; fi
 (cd "$R" && bash "$HERE/baseline.sh" check task-2 >/dev/null 2>&1); rc=$?
 total=$((total+1)); if [ "$rc" -eq 0 ]; then echo "  ok    check passes on an unchanged brief"; else echo "  FAIL  check failed on an unchanged brief"; fails=$((fails+1)); fi
 printf 'changed after approval\n' >> "$R/working/task-2/brief.md"

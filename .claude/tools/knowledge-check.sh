@@ -106,8 +106,12 @@ function isdate(s,   y, mo, d, dim) {
   else if (mo==2) dim = (((y%4==0) && (y%100!=0)) || (y%400==0)) ? 29 : 28
   return d <= dim
 }
-NR==1 { if ($0 != "---") { prob("no page header: the file does not open with a --- front-matter block"); exit } ; inside=1; next }
-inside && $0 == "---" { inside=0; done=1; exit }
+NR==1 { fence=$0; sub(/\r$/, "", fence)
+         if (fence != "---") { prob("no page header: the file does not open with a --- front-matter block"); exit }
+         opened=1; inside=1; next }
+# The fence lines get their CR stripped too. Stripping it only from field lines meant a CRLF
+# page reported "no page header" on Linux and passed on Windows, for the same bytes.
+inside { fence=$0; sub(/\r$/, "", fence); if (fence == "---") { inside=0; done=1; exit } }
 inside {
   line=$0; sub(/\r$/, "", line)
   if (match(line, /^[A-Za-z_]+:/)) {
@@ -119,7 +123,10 @@ inside {
 }
 END {
   if (NR == 0) { prob("the page is empty"); exit }
-  if (!done && !seen["title"]) exit          # already reported: no header at all
+  if (!opened) exit                          # already reported: no header at all
+  # An unterminated block would otherwise swallow the whole page as header, find every required
+  # field somewhere in the prose, and pass. It is malformed, and it says so.
+  if (!done) { prob("the page header opens with --- and is never closed"); exit }
   n = split(required, req, " ")
   for (i = 1; i <= n; i++) {
     f = req[i]
@@ -320,21 +327,39 @@ fi
 # of every number, and not a prose consistency engine. The list belongs to the tree being checked,
 # so a fixture and an adopter's repository each bring their own, and one with none gets no drift
 # checks rather than a wall of failures about a README that was never making these claims.
-numword() {
-  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+numword_one() {
+  case "$1" in
     zero) echo 0;; one) echo 1;; two) echo 2;; three) echo 3;; four) echo 4;; five) echo 5;;
     six) echo 6;; seven) echo 7;; eight) echo 8;; nine) echo 9;; ten) echo 10;;
     eleven) echo 11;; twelve) echo 12;; thirteen) echo 13;; fourteen) echo 14;;
     fifteen) echo 15;; sixteen) echo 16;; seventeen) echo 17;; eighteen) echo 18;;
-    nineteen) echo 19;; twenty) echo 20;; ''|*[!0-9]*) echo "";; *) echo "$1";;
+    nineteen) echo 19;; twenty) echo 20;; thirty) echo 30;; forty) echo 40;; fifty) echo 50;;
+    sixty) echo 60;; seventy) echo 70;; eighty) echo 80;; ninety) echo 90;;
+    ''|*[!0-9]*) echo "";; *) echo "$1";;
+  esac
+}
+# Hyphenated forms too. A document saying "twenty-one hooks" matched the curated pattern as the
+# fragment "one hooks" and was read as 1, so it agreed with a tree that had one hook, silently.
+numword() {
+  local w t u
+  w="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$w" in
+    *-*) t="$(numword_one "${w%%-*}")"; u="$(numword_one "${w#*-}")"
+         if [ -n "$t" ] && [ -n "$u" ] && [ "$t" -ge 20 ] && [ "$((t % 10))" -eq 0 ] \
+            && [ "$u" -ge 1 ] && [ "$u" -le 9 ]; then echo "$((t + u))"; else echo ""; fi ;;
+    *)   numword_one "$w" ;;
   esac
 }
 
 conf=".claude/knowledge-drift.conf"
+have_conf=0
 if [ ! -f "$conf" ]; then
   [ "$porcelain" = 1 ] || printf '  ----  no %s; no drift checks are curated for this project\n' "$conf"
 else
-  while IFS= read -r line; do
+  have_conf=1
+  # `read` returns non-zero on a last line with no trailing newline, so without the second test the
+  # final curated check would be dropped in silence and the section would still report PASS.
+  while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|'#'*) continue ;; esac
     quantity="${line%%::*}"; rest="${line#*::}"
     docfile="${rest%%::*}";  pattern="${rest#*::}"
@@ -383,6 +408,9 @@ else
       fail drift "$docfile" "states $stated for $kind $src, the tree has $actual: \"$frag\""
     fi
   done < "$conf"
+  # An empty set passes every check, which is the trap this repository already records against
+  # itself. A curated list that produced no comparison at all is a broken list, not a clean tree.
+  [ "$s_drift" -eq 0 ] && fail drift "$conf" "the curated list produced no checks at all; it is empty, or every line is a comment"
 fi
 
 # --- report -------------------------------------------------------------------------------------
@@ -398,7 +426,9 @@ if [ "$porcelain" = 1 ]; then
   st() { if [ "$2" -eq 0 ]; then printf 'SECTION %s PASS %s\n' "$1" "$3"; else printf 'SECTION %s FAIL %s\n' "$1" "$3"; fi; }
   st structure  "$f_structure"  "$s_structure pages carry the header the rules require"
   st references "$f_references" "$s_references references resolve"
-  st drift      "$f_drift"      "$s_drift curated counts agree with the tree"
+  if [ "$have_conf" = 0 ]; then
+    printf 'SECTION drift NONE no curated counts for this project (%s)\n' "$conf"
+  else st drift "$f_drift" "$s_drift curated counts agree with the tree"; fi
   [ "$total_fail" -gt 0 ] && render_detail "DETAIL "
   [ "$total_fail" -eq 0 ] || exit 1
   exit 0

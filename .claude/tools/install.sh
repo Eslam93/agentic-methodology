@@ -89,9 +89,22 @@ was_unmanaged() { grep -qxF -- "$1" "$tmp/unman" 2>/dev/null; }
 
 # One pass, one table, and every line of it readable. `apply` is 0 for --check.
 r_added=""; r_updated=""; r_unchanged=""; r_modified=""; r_unverified=""
-r_removedlocal=""; r_upstreamgone=""; r_failed=""; copied=0
+r_removedlocal=""; r_upstreamgone=""; r_failed=""; r_outdated=""; copied=0
+# Write, then prove the bytes landed. A destination that is a directory, a full disk, or a
+# read-only file must never end with the manifest recording a version that is not there: the
+# manifest's whole value is that it describes what is actually on disk.
+install_file() {   # src dest expected-hash
+  local src="$1" dest="$2" want="$3"
+  [ -d "$dest" ] && return 1
+  mkdir -p "$(dirname "$dest")" 2>/dev/null || return 1
+  cp "$src" "$dest" 2>/dev/null || return 1
+  [ "$(hash_file "$dest" 2>/dev/null)" = "$want" ]
+}
+# $1 apply: 0 for --check, which writes nothing.
+# $2 replace: 1 only for --update. A plain install never replaces an existing file, which is the
+# promise in this script's header and the reason an update has to be asked for by name.
 sync_managed() {
-  local apply="$1" rel up loc old dest
+  local apply="$1" replace="${2:-0}" rel up loc old dest
   : > "$tmp/manifest.body"
   managed_files > "$tmp/new"
   while IFS= read -r rel; do
@@ -105,7 +118,7 @@ sync_managed() {
       # not managed by any previous installation of this kit
       if [ -z "$loc" ]; then
         if [ "$apply" = 1 ]; then
-          mkdir -p "$(dirname "$dest")" && cp "$KIT/$rel" "$dest" || { r_failed="$r_failed $rel"; continue; }
+          install_file "$KIT/$rel" "$dest" "$up" || { r_failed="$r_failed $rel"; continue; }
           copied=$((copied+1))
         fi
         r_added="$r_added $rel"; printf 'managed %s %s\n' "$up" "$rel" >> "$tmp/manifest.body"
@@ -129,13 +142,21 @@ sync_managed() {
     elif [ "$loc" = "$old" ]; then
       if [ "$up" = "$old" ]; then
         r_unchanged="$r_unchanged $rel"; printf 'managed %s %s\n' "$up" "$rel" >> "$tmp/manifest.body"
+      elif [ "$replace" != 1 ]; then
+        # a plain install: the file is still ours and still untouched, but replacing it is what
+        # --update is for. Record what is actually on disk, which is the old version.
+        r_outdated="$r_outdated $rel"; printf 'managed %s %s\n' "$old" "$rel" >> "$tmp/manifest.body"
       else
         if [ "$apply" = 1 ]; then
-          mkdir -p "$(dirname "$dest")" && cp "$KIT/$rel" "$dest" || { r_failed="$r_failed $rel"; printf 'managed %s %s\n' "$old" "$rel" >> "$tmp/manifest.body"; continue; }
+          install_file "$KIT/$rel" "$dest" "$up" || { r_failed="$r_failed $rel"; printf 'managed %s %s\n' "$old" "$rel" >> "$tmp/manifest.body"; continue; }
           copied=$((copied+1))
         fi
         r_updated="$r_updated $rel"; printf 'managed %s %s\n' "$up" "$rel" >> "$tmp/manifest.body"
       fi
+    elif [ "$loc" = "$up" ]; then
+      # diverged once and now byte-identical to this release: it has converged, so it rejoins the
+      # managed set rather than being reported as modified for the rest of its life.
+      r_unchanged="$r_unchanged $rel"; printf 'managed %s %s\n' "$up" "$rel" >> "$tmp/manifest.body"
     else
       # changed since it was installed. Preserve it, and keep the LAST UPSTREAM hash, not the local
       # one: the manifest records the version to compare against, not whatever happens to be there.
@@ -183,11 +204,18 @@ report() {
   for f in $list; do echo "  $f"; done
 }
 
-if [ "$update" = 1 ]; then
-  [ -d "$target/.claude" ] || { echo "no .claude/ in $target; run the installer without --update first"; exit 1; }
-  [ -f "$target/$MANIFEST" ] || echo "no $MANIFEST here: this installation predates it. Files identical to this release are adopted; anything that differs is left alone and listed, because nothing records what it started as."
-  sync_managed "$([ "$check" = 1 ] && echo 0 || echo 1)"
-  if [ "$check" = 1 ]; then echo "check only, nothing was written. Version on offer: $(kit_version)"
+if [ "$update" = 1 ] || [ "$check" = 1 ]; then
+  # --check goes down this path whether or not --update was given, because the one thing it must
+  # never do is write. Read on its own it used to fall through to a full install, which is the
+  # opposite of a preview and the easiest typo to make.
+  if [ "$update" = 1 ] && [ ! -d "$target/.claude" ]; then
+    echo "no .claude/ in $target; run the installer without --update first"; exit 1
+  fi
+  [ "$update" = 1 ] && [ ! -f "$target/$MANIFEST" ] && echo "no $MANIFEST here: this installation predates it. Files identical to this release are adopted; anything that differs is left alone and listed, because nothing records what it started as."
+  sync_managed "$([ "$check" = 1 ] && echo 0 || echo 1)" "$update"
+  if [ "$check" = 1 ]; then
+    echo "check only, nothing was written. Version on offer: $(kit_version)"
+    [ "$update" = 1 ] || echo "This is what a first install would copy; add --update to preview an update instead."
   else write_manifest || { echo "could not write $MANIFEST"; exit 1; }; fi
   echo
   report "Updated:"                             "$r_updated"
@@ -196,6 +224,7 @@ if [ "$update" = 1 ]; then
   report "Present but never recorded, left alone:" "$r_unverified"
   report "Deleted here, not restored:"          "$r_removedlocal"
   report "Upstream removed, left in place:"     "$r_upstreamgone"
+  report "Older than this release, not replaced:" "$r_outdated"
   report "FAILED:"                              "$r_failed"
   n_mod=$(printf '%s' "$r_modified $r_unverified" | wc -w | tr -d ' ')
   echo
@@ -203,14 +232,18 @@ if [ "$update" = 1 ]; then
     echo "the update did not complete: the files under FAILED were not written, and the manifest still records their previous version"
     exit 1
   fi
-  echo "update complete. $n_mod file(s) were preserved for you to reconcile; nothing was merged or overwritten."
-  echo "Rules and hooks load at session start, so start a new session after this update."
+  if [ "$check" = 1 ]; then
+    echo "nothing was written. $n_mod file(s) would be preserved for you to reconcile."
+  else
+    echo "update complete. $n_mod file(s) were preserved for you to reconcile; nothing was merged or overwritten."
+    echo "Rules and hooks load at session start, so start a new session after this update."
+  fi
   exit 0
 fi
 
 kept=""
-sync_managed 1
-for f in $r_unchanged $r_unverified; do kept="$kept $f"; done
+sync_managed 1 0
+for f in $r_unchanged $r_unverified $r_outdated; do kept="$kept $f"; done
 
 # settings.json for this operating system
 case "$(uname -s 2>/dev/null)" in
@@ -363,9 +396,16 @@ write_manifest || echo "warning: could not write $MANIFEST; a later --update wil
 echo "copied $copied files into $target/.claude/"
 [ -n "$kept" ] && echo "left alone (already existed):$kept"
 echo "recorded $(grep -c '^managed ' "$target/$MANIFEST" 2>/dev/null || echo 0) managed files in $MANIFEST ($(kit_version))"
+[ -n "$r_removedlocal" ] && { echo "these managed files are recorded but not present here; they were not restored:"; for f in $r_removedlocal; do echo "  $f"; done; }
+[ -n "$r_failed" ] && { echo "these managed files could NOT be written, and the manifest does not claim them:"; for f in $r_failed; do echo "  $f"; done; }
+[ -n "$r_outdated" ] && { echo "these managed files are older than this release and were NOT replaced, because a plain install never overwrites:"; for f in $r_outdated; do echo "  $f"; done; echo "run it again with --update to take them."; }
 echo "To take a later release: bash <kit>/.claude/tools/install.sh $target --update  (add --check to preview)"
 echo
 echo "Next: open the assistant at $target and say: read START-HERE.md and follow it."
 echo "Rules and hooks load at session start, so start a new session after this install."
 echo
 bash "$target/.claude/tools/verify.sh" || true
+# A half install must not report success. verify.sh's own result is left out of this on purpose: it
+# reports the state of the target, which is a different question from whether the installer worked.
+[ -n "$r_failed" ] && exit 1
+exit 0

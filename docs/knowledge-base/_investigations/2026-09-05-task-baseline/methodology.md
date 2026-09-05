@@ -6,7 +6,7 @@ last_verified: 2026-09-05
 verification_method: hooks.test.sh run in both shells on the owner's Windows machine on 2026-09-05, plus scratch repositories in which each case was fired by hand and the hook's stderr captured; the outputs are quoted below. The design was reviewed by eight finder subagents and twelve verifiers against the working tree, each reproducing its candidate in a scratch repository before it was accepted
 scope: The change decided as D-17: baseline.sh, the two verify-on-finish hooks, the hook test suite, and the /work, /pr, codex-relay, and standing-orders text. Not the active-task pointer, the review contract, or any waiver
 confidence: High for what the tests and the runs showed; each is a command and its output. The live Stop hook on the desktop app was not observed against a committed weakening in a real session
-known_gaps: Only JavaScript-shaped fixtures were exercised; the assertion heuristics are unchanged and still JavaScript and C# shaped. Shape B with several checkouts was exercised by hand in a scratch workspace, not by the suite. Nothing was tried on macOS, whose BSD find lacks -printf and whose bash is 3.2; Linux GNU find has -printf and CI runs the bash cases
+known_gaps: Only JavaScript-shaped fixtures were exercised; the assertion heuristics are unchanged and still JavaScript and C# shaped. Shape B with several checkouts was exercised by hand in a scratch workspace, not by the suite. Nothing was tried on macOS, whose bash is 3.2. Nothing kept only in the disposable working/ folder can be made tamper-proof against the builder who can write there: the guards below raise the cost of the obvious routes and do not remove the class
 reverify_when: On any change to baseline.sh, either verify-on-finish hook, or hooks.test.sh; before quoting the case count
 ---
 
@@ -241,9 +241,15 @@ valid seal read as tampered on one platform only.
 **A broken seal blocks; it does not fall back.** Every other failure in this hook falls back to
 `HEAD` and says so. This one cannot: the recorded starting point is what the comparison is measured
 from, so an edited seal can hide a weakening rather than merely lose the protection, and falling
-back to `HEAD` is exactly the outcome the edit produces. A brief carrying no `seal_sha256` at all is
-a different case, an absent legacy seal from before this existed, and keeps the old behaviour with
-no block. Both are cases.
+back to `HEAD` is exactly the outcome the edit produces.
+
+**A brief that records a baseline and carries no digest blocks too.** The first build treated that
+as an absent legacy seal and trusted it, which meant deleting one line disarmed the whole
+mechanism: the baseline could then be moved and the tier rewritten with nothing to notice. The
+review of 2026-09-06 demonstrated it. Every seal this tool has ever written carries the digest, and
+no released kit ever produced a brief without one, so requiring it costs nothing real. A brief with
+no baseline at all is still the ordinary no-task case and still falls back quietly. All three are
+cases.
 
 The `tier` line is inside the seal, which closes the `P2` recorded by the verifier of D-19: a
 one-line edit turning `tier: 3` into `tier: 2` used to remove the review contract, and now blocks.
@@ -278,8 +284,8 @@ commit that added it during this task
 
 ### The suite
 
-`bash .claude/tools/hooks.test.sh`: **146 passed, 0 failed**, both shells, against 120 before this
-correction. Twenty-six assertions were added. Every D-17 and D-18 regression listed on this page and
+`bash .claude/tools/hooks.test.sh`: **159 passed, 0 failed**, both shells, against 120 before this
+correction. The count includes the assertions added by the review of 2026-09-06, below. Every D-17 and D-18 regression listed on this page and
 on the active-task page still passes, unchanged: committed weakening, staged rename, added test with
 an uncommitted weakening, rebased baseline, nonexistent baseline, body digest, refusal to re-seal,
 pre-existing recording, two-session isolation, pointer validation, the relay-brief refusal, and the
@@ -308,3 +314,53 @@ question, not a patch.
 `resume-brief` prints it before the brief. Two concurrent sessions each get their own brief and both
 see whichever status was written last. D-18 never claimed general concurrency control, so this is a
 limit of the surrounding state, not a defect in the pointer.
+
+## What an independent review found, 2026-09-06
+
+Six independent readers ran this code against fixtures they built themselves, and each finding was
+verified by a second reader who tried to refute it. Four defects in the seal work held. All four are
+fixed, and each has a case.
+
+**The seal could be moved by making the brief look unsealed.** "Already sealed" was decided by
+`front_matter()`, which requires line 1 to be exactly `---`. A blank line before the fence, a BOM, or
+deleting the header outright made a sealed brief present as unsealed, and `seal` ran again and wrote
+a fresh, self-consistent approval at whatever `HEAD` had become. `check` then said "brief unchanged
+since approval" and "seal intact", and both hooks exited 0. Removing `--force` had closed the front
+door and left this open.
+
+Two guards now. Whether a brief is sealed is decided by scanning the whole file for an approval line,
+so a brief that carries one and cannot be parsed is refused rather than re-sealed. And
+`pre-existing.txt`, which only `seal` writes, is treated as proof that this task was sealed once
+already, whatever the brief now contains, so stripping the approval out is refused as well. Removing
+the task folder entirely still starts the task over, because that is the documented way to do it and
+`working/` is disposable by design.
+
+**A tab defeated the baseline while keeping the digest valid.** The canonical form trims whitespace
+after the colon, so `baseline_commit.repo:` followed by a tab hashes identically. The hooks looked
+the key up as `"baseline_commit.<name>: "` with a literal space, found nothing, and fell back to
+`HEAD` with a note nobody reads on exit 0. One character removed the protection while every check
+still said the seal was intact. Both hooks now read the key up to the colon and trim exactly as the
+digest does.
+
+**A rename cleared the added-test block.** `git log` with a single pathspec cannot pair a rename, so
+it reports the commit that renamed a file as an add of the new name. For a test created during the
+task, that made the already-weakened file its own comparison base: weaken, commit, `git mv`, commit,
+and the turn passed. Both hooks now follow the rename back through the commit's own full diff,
+bounded at five hops, and the block names the old path and the new one.
+
+**The PowerShell hook read the brief in the ANSI codepage.** `Get-Content` with no `-Encoding`
+returns mojibake for the UTF-8 bytes `baseline.sh` writes, so the digest disagreed with both bash
+implementations. A checkout folder with an accent in its name was enough to report a valid seal as
+tampered and stop every turn on Windows only. It reads UTF-8 now.
+
+### What is still not closed
+
+`working/` is writable by the builder, so no record kept only there can be made tamper-proof against
+it. What these guards buy is that each obvious route now says no, and that the routes which remain
+require deleting more than one artefact. The honest sentence is that the seal makes moving a baseline
+expensive and visible, not impossible.
+
+The rename follow is bounded at five hops, so a sixth chained rename inside one task falls back to
+the last commit it found. Splitting a test created during the task into two files still blocks every
+turn, because the original loses assertions and nothing knows they moved; that is the same friction
+D-17 accepted, and it is in `99-pending.md`.

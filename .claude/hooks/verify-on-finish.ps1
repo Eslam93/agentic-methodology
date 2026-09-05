@@ -34,14 +34,15 @@
       - renames are detected (-M), so a staged git mv plus a removed assertion is compared old path
         to new path;
       - a test added during the task has no version at the baseline, so it is compared against the
-        commit that first added it during the task; comparing against HEAD would see nothing once
-        the weakening was itself committed. With no baseline, or when the file was staged and never
-        committed, HEAD is the only earlier version and is used.
-    It also refuses to run on a moved seal: baseline.sh records seal_sha256 over the approval
-    fields, and if that no longer matches, the recorded starting point has been edited since
-    approval. That blocks (exit 2) rather than falling back, because falling back to HEAD is the
-    outcome such an edit is after. A brief with no seal_sha256 at all was sealed before this
-    existed and is treated as a legacy seal, not as tampering.
+        commit that first added it during the task, following renames back; comparing against HEAD
+        would see nothing once the weakening was itself committed, and one git mv would otherwise
+        make the weakened file its own comparison base. With no baseline, or when the file was
+        staged and never committed, HEAD is the only earlier version and is used.
+    It also refuses to run on a seal it cannot trust. baseline.sh records seal_sha256 over the
+    approval fields, and this hook rebuilds it. A digest that does not match, or a brief that
+    records a baseline and carries no digest at all, blocks (exit 2) rather than falling back:
+    falling back to HEAD is the outcome such an edit is after, and treating a missing digest as a
+    legacy seal would mean deleting one line disarmed the whole mechanism.
     Fallback, never a block, and never a guess at which task is active: no session id, no pointer, a
     pointer that does not resolve, a brief with no seal, or a seal that does not name this checkout,
     and the comparison is against HEAD as it was before this mechanism. A sealed commit rewritten by
@@ -134,7 +135,11 @@ if ($session -cmatch '^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$') {
     }
 }
 if ($briefFile) {
-    $lines = @(Get-Content $briefFile -ErrorAction SilentlyContinue)
+    # UTF-8 explicitly: Windows PowerShell 5.1 reads a BOM-less file in the system ANSI codepage,
+    # which turns every non-ASCII byte baseline.sh wrote into different characters and makes the
+    # digest disagree with both bash implementations. A checkout folder with an accent in its name
+    # was enough to report a valid seal as tampered.
+    $lines = @(Get-Content $briefFile -Encoding UTF8 -ErrorAction SilentlyContinue)
     if ($lines.Count -gt 0 -and $lines[0].Trim() -eq '---') {
         for ($i = 1; $i -lt $lines.Count; $i++) {
             if ($lines[$i].Trim() -eq '---') { break }
@@ -192,19 +197,21 @@ function Get-Sha256Hex {
 
 if ($briefFile) {
     $sealHit = $fm | Where-Object { $_.StartsWith('seal_sha256:', [System.StringComparison]::Ordinal) } | Select-Object -First 1
-    if ($sealHit) {
-        $want = ($sealHit.Trim() -split '\s+')[-1]
-        $have = Get-Sha256Hex (Get-CanonicalSeal $fm)
-        if ($want -ne $have) {
-            # A brief with no seal_sha256 was sealed before this existed: an absent legacy seal,
-            # which keeps the old path. A digest that does not match is a different thing. The
-            # comparison base itself may have been moved, so falling back to HEAD would hand the
-            # edit exactly what it was after. There is no safe base left, so the turn stops.
+    $want = if ($sealHit) { ($sealHit.Trim() -split '\s+')[-1] } else { '' }
+    $have = Get-Sha256Hex (Get-CanonicalSeal $fm)
+    # A brief recording a baseline with no digest is not a legacy seal to be trusted: deleting one
+    # line would otherwise turn any sealed brief into one.
+    if (-not $want -or $want -ne $have) {
+        # Falling back to HEAD here would hand the edit exactly what it was after, because the
+        # comparison base itself may be what moved. There is no safe base left, so the turn stops.
+        $reason = if (-not $want) { 'it records a baseline but carries no seal_sha256 at all' }
+                  else { 'seal_sha256 does not match the approval fields now in the brief' }
+        if ($true) {
             $m = @()
-            $m += "STOP: the sealed approval in $briefName has been edited since it was approved."
+            $m += "STOP: the sealed approval in $briefName cannot be trusted."
             $m += ''
-            $m += '  seal_sha256 does not match the approval fields now in the brief. One of task,'
-            $m += '  approved_at, tier, baseline_commit, brief_sha256, or pre_existing has changed.'
+            $m += "  $reason. The approval fields are task, approved_at,"
+            $m += '  tier, every baseline_commit, brief_sha256, and pre_existing.'
             $m += ''
             $m += 'This is not the same as a task with no baseline. The recorded starting point is what'
             $m += 'every test comparison in this session is measured from, so a moved baseline can hide'
@@ -215,6 +222,9 @@ if ($briefFile) {
             $m += '  - restore the sealed values from git or from the owner''s record; or'
             $m += '  - if the agreement really changed, say so to the owner, write a new brief under'
             $m += '    working/<new-task>/ and seal that one, leaving this approval readable beside it.'
+            $m += ''
+            $t = $briefName -replace '^working/', '' -replace '/brief\.md$', ''
+            $m += "  bash .claude/tools/baseline.sh check $t"
             [Console]::Error.WriteLine(($m -join "`n"))
             exit 2
         }
@@ -248,9 +258,12 @@ foreach ($repo in $repos) {
     if ($briefFile) {
         # the value is the last field, so a checkout folder with a space in its name still parses,
         # and StartsWith means a name with a regex character is not a pattern
-        $key = "baseline_commit.$name" + ': '
+        # The key up to the colon, then whatever whitespace follows, exactly as Get-CanonicalSeal
+        # reads it. Requiring a literal space let a tab keep the digest valid while this lookup
+        # found nothing and quietly fell back to HEAD.
+        $key = "baseline_commit.$name" + ':'
         $hit = $fm | Where-Object { $_.StartsWith($key, [System.StringComparison]::Ordinal) } | Select-Object -First 1
-        $sha = if ($hit) { ($hit.Trim() -split '\s+')[-1] } else { $null }
+        $sha = if ($hit) { $hit.Substring($key.Length).Trim() } else { $null }
         if (-not $sha) {
             Write-Output "note from verify-on-finish: $briefName has no baseline for $name; comparing against HEAD."
         } elseif (Test-Git $repo @('merge-base', '--is-ancestor', $sha, 'HEAD')) {
@@ -291,14 +304,31 @@ foreach ($repo in $repos) {
             # version and the two sides are identical. So compare against the version at the commit
             # that first added the file during this task.
             if (-not (Test-IsTestFile $file)) { continue }
-            $first = $null
+            # git log with one pathspec cannot pair a rename, so a commit that renamed the file is
+            # reported as an ADD of the new name and the weakened file becomes its own base. Follow
+            # the rename back, bounded, using the commit's own full diff to find the old name.
+            $first = $null; $probe = $file
             if ($base -ne 'HEAD') {
-                $log = Invoke-Git $repo @('log', '--diff-filter=A', '--reverse', '--format=%H', "$base..HEAD", '--', $file)
-                if ($log) { $first = @($log) | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1 }
+                $upto = 'HEAD'; $hop = 0
+                while ($hop -lt 5) {
+                    $log = Invoke-Git $repo @('log', '--diff-filter=A', '--reverse', '--format=%H', "$base..$upto", '--', $probe)
+                    $first = if ($log) { @($log) | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1 } else { $null }
+                    if (-not $first) { break }
+                    $first = $first.Trim()
+                    $show = Invoke-Git $repo @('show', '--name-status', '-M', '--format=', $first)
+                    $src = $null
+                    foreach ($l in @($show)) {
+                        $parts = $l -split "`t"
+                        if ($parts.Count -ge 3 -and $parts[0] -like 'R*' -and $parts[2] -eq $probe) { $src = $parts[1]; break }
+                    }
+                    if (-not $src) { break }
+                    $probe = $src; $upto = "$first^"; $hop++
+                }
             }
             if ($first) {
-                $first = $first.Trim()
-                $label = "$name/$file (added during the task)"; $cmpBase = $first
+                $label = if ($probe -ne $file) { "$name/$probe -> $file (added during the task, then renamed)" }
+                         else { "$name/$file (added during the task)" }
+                $cmpBase = $first; $old = $probe
                 $cmpSince = "$(Get-Short $first), the commit that added it during this task"
             } elseif (Test-Git $repo @('cat-file', '-e', "HEAD:$file")) {
                 # staged but never committed, or no task baseline: HEAD is the only earlier version

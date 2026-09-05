@@ -17,14 +17,15 @@
 #   - renames are detected (-M), so a staged git mv plus a removed assertion is compared old path
 #     to new path;
 #   - a test added during the task has no version at the baseline, so it is compared against the
-#     commit that first added it during the task; comparing against HEAD would see nothing once the
-#     weakening was itself committed. With no baseline, or when the file was staged and never
-#     committed, HEAD is the only earlier version and is used.
-# It also refuses to run on a moved seal: baseline.sh records seal_sha256 over the approval fields,
-# and if that no longer matches, the recorded starting point has been edited since approval. That
-# blocks (exit 2) rather than falling back, because falling back to HEAD is the outcome such an
-# edit is after. A brief with no seal_sha256 at all was sealed before this existed and is treated
-# as a legacy seal, not as tampering.
+#     commit that first added it during the task, following renames back; comparing against HEAD
+#     would see nothing once the weakening was itself committed, and one git mv would otherwise make
+#     the weakened file its own comparison base. With no baseline, or when the file was staged and
+#     never committed, HEAD is the only earlier version and is used.
+# It also refuses to run on a seal it cannot trust. baseline.sh records seal_sha256 over the approval
+# fields, and this hook rebuilds it. A digest that does not match, or a brief that records a baseline
+# and carries no digest at all, blocks (exit 2) rather than falling back: falling back to HEAD is the
+# outcome such an edit is after, and treating a missing digest as a legacy seal would mean deleting
+# one line disarmed the whole mechanism.
 # Fallback, never a block, and never a guess at which task is active: no session id, no pointer, a
 # pointer that does not resolve, a brief with no seal, or a seal that does not name this checkout,
 # and the comparison is against HEAD as it was before this mechanism. A sealed commit rewritten by
@@ -117,21 +118,30 @@ canonical_seal() { # $1: the front matter text
 }
 if [ -n "$briefFile" ]; then
   want=$(printf '%s\n' "$fm" | awk 'index($0, "seal_sha256:")==1 {print $NF; exit}')
-  if [ -n "$want" ]; then
-    tool=$(digest_tool)
-    if [ -z "$tool" ]; then
-      echo "note from verify-on-finish: no sha256 tool on PATH, so the seal in $briefName was not checked."
-    elif [ "$want" != "$(canonical_seal "$fm" | $tool | cut -d' ' -f1)" ]; then
+  tool=$(digest_tool)
+  if [ -z "$tool" ]; then
+    echo "note from verify-on-finish: no sha256 tool on PATH, so the seal in $briefName was not checked."
+  else
+    # A brief that records a baseline and no digest is not a legacy seal to be trusted: deleting one
+    # line would otherwise turn any sealed brief into one, and the baseline could then be moved and
+    # the tier rewritten with nothing to notice. Every seal this tool has ever written carries the
+    # digest, so a missing one means the brief was edited or was sealed by something else.
+    if [ -z "$want" ] || [ "$want" != "$(canonical_seal "$fm" | $tool | cut -d' ' -f1)" ]; then
+      if [ -z "$want" ]; then
+        reason="it records a baseline but carries no seal_sha256 at all"
+      else
+        reason="seal_sha256 does not match the approval fields now in the brief"
+      fi
       # A brief with no seal digest was sealed before this existed: that is an absent legacy seal
       # and keeps the old path. A digest that does not match is a different thing entirely. The
       # comparison base itself may have been moved, so falling back to HEAD would hand the edit
       # exactly what it was after: every weakening before the new commit disappearing. There is no
       # safe base left, so the turn stops here and a person decides.
       {
-        echo "STOP: the sealed approval in $briefName has been edited since it was approved."
+        echo "STOP: the sealed approval in $briefName cannot be trusted."
         echo
-        echo "  seal_sha256 does not match the approval fields now in the brief. One of task,"
-        echo "  approved_at, tier, baseline_commit, brief_sha256, or pre_existing has changed."
+        echo "  $reason. The approval fields are task, approved_at,"
+        echo "  tier, every baseline_commit, brief_sha256, and pre_existing."
         echo
         echo "This is not the same as a task with no baseline. The recorded starting point is what"
         echo "every test comparison in this session is measured from, so a moved baseline can hide"
@@ -143,7 +153,8 @@ if [ -n "$briefFile" ]; then
         echo "  - if the agreement really changed, say so to the owner, write a new brief under"
         echo "    working/<new-task>/ and seal that one, leaving this approval readable beside it."
         echo
-        echo "  bash .claude/tools/baseline.sh check ${briefName#working/}" | sed 's|/brief.md||'
+        t="${briefName#working/}"; t="${t%/brief.md}"
+        echo "  bash .claude/tools/baseline.sh check $t"
       } >&2
       exit 2
     fi
@@ -175,8 +186,11 @@ for repo in "${repos[@]}"; do
   if [ -n "$briefFile" ]; then
     # index()==1 is a literal, anchored prefix match: a checkout name with a space, a regex
     # character, or a glob character is safe, and a line that merely mentions the key cannot win
-    sha=$(printf '%s\n' "$fm" | awk -v key="baseline_commit.$name: " \
-      'index($0, key)==1 {v=substr($0, length(key)+1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit}')
+    # The key up to the colon, then whatever whitespace follows, exactly as canonical_seal reads
+    # it. Matching "key: " with a literal space let a tab keep the digest valid while this lookup
+    # found nothing and quietly fell back to HEAD.
+    sha=$(printf '%s\n' "$fm" | awk -v key="baseline_commit.$name:" \
+      'index($0, key)==1 {v=substr($0, length(key)+1); sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v); print v; exit}')
     if [ -z "$sha" ]; then
       echo "note from verify-on-finish: $briefName has no baseline for $name; comparing against HEAD."
     elif git -C "$repo" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
@@ -206,9 +220,22 @@ for repo in "${repos[@]}"; do
           # is still uncommitted, and nothing else: once the weakening is committed, HEAD is the
           # weakened version and the two sides are identical (measured 2026-09-05). So compare
           # against the version at the commit that first added the file during this task.
-          first=$(git -C "$repo" log --diff-filter=A --reverse --format=%H "$base..HEAD" -- "$file" 2>/dev/null | head -1)
+          # git log with one pathspec cannot pair a rename, so it reports a commit that renamed the
+          # file as an ADD of the new name, and the weakened file becomes its own comparison base.
+          # Follow the rename back, bounded, using the commit's own full diff to find the old name.
+          probe="$file"; upto="HEAD"; first=""; hop=0
+          while [ "$hop" -lt 5 ]; do
+            first=$(git -C "$repo" log --diff-filter=A --reverse --format=%H "$base..$upto" -- "$probe" 2>/dev/null | head -1)
+            [ -n "$first" ] || break
+            src=$(git -C "$repo" show --name-status -M --format= "$first" 2>/dev/null \
+                  | awk -v f="$probe" '$1 ~ /^R/ && $3 == f { print $2; exit }')
+            [ -n "$src" ] || break
+            probe="$src"; upto="$first^"; hop=$((hop+1))
+          done
           if [ -n "$first" ]; then
-            compare "$repo" "$first" "$name/$file (added during the task)" "$file" "$file" \
+            lbl="$name/$file (added during the task)"
+            [ "$probe" != "$file" ] && lbl="$name/$probe -> $file (added during the task, then renamed)"
+            compare "$repo" "$first" "$lbl" "$probe" "$file" \
               "${first:0:7}, the commit that added it during this task"
           elif git -C "$repo" cat-file -e "HEAD:$file" 2>/dev/null; then
             # staged but never committed, or no task baseline: HEAD is the only earlier version

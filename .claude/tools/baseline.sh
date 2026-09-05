@@ -114,7 +114,14 @@ canonical_seal() { # $1: the front matter text
 }
 
 fm=$(front_matter "$brief")
-sealed=0; printf '%s\n' "$fm" | grep -Eq '^baseline_commit(\.[^:]*)?:' && sealed=1
+# Whether a brief is already sealed is decided by the whole file, never by whether its front matter
+# parses. front_matter() needs line 1 to be exactly ---, so a blank line, a BOM, or a stripped
+# header would present a sealed brief as unsealed and let seal run again, moving the baseline to a
+# later commit with a fully self-consistent new digest. That is the one thing a seal must not do.
+sealed=0; grep -Eq '^(baseline_commit(\.[^:]*)?|seal_sha256):' "$brief" && sealed=1
+if [ "$sealed" = 1 ] && [ -z "$fm" ]; then
+  die "working/$task/brief.md carries a seal but its front matter cannot be read; the file must begin with a --- fence on line 1. Restore it from git, or agree a new task and seal a new brief beside this one"
+fi
 session="${CLAUDE_CODE_SESSION_ID:-}"
 printf '%s' "$session" | grep -Eq "$SESSION_RE" || session=""
 
@@ -125,6 +132,20 @@ case "$cmd" in
       "") die "seal needs the tier: baseline.sh seal $task <1|2|3>. It is the tier stated in the agree message, and Tier 3 carries the review contract" ;;
       *) die "tier must be 1, 2, or 3" ;;
     esac
+    # Stripping the approval out of the brief makes it look unsealed, and sealing again would then
+    # produce a fresh, self-consistent approval at whatever HEAD is now. pre-existing.txt is written
+    # by seal and by nothing else, so its presence says this task was sealed once already, whatever
+    # the brief now contains. It does not make working/ tamper-proof, and nothing kept only in a
+    # disposable folder can be: it makes the obvious route say no. Deleting the whole task folder
+    # and agreeing again is still allowed, because that is the documented way to start over.
+    if [ "$sealed" = 0 ] && [ -f "$dir/pre-existing.txt" ]; then
+      echo "baseline.sh: working/$task/brief.md was sealed once already, and its approval is no longer in the file." >&2
+      echo "A seal does not move, and a brief with its approval removed is not a new agreement. Restore it from the" >&2
+      echo "owner's record, or agree a new task under working/<new-task>/ so the original stays readable beside it." >&2
+      echo "If you really are starting this task over, remove working/$task/ entirely first, so nothing of the old" >&2
+      echo "approval is left to be confused with the new one." >&2
+      exit 1
+    fi
     if [ "$sealed" = 1 ]; then
       echo "baseline.sh: working/$task/brief.md is already sealed, and a seal does not move." >&2
       echo "A changed agreement is a new task: write the new brief under working/<new-task>/ and seal that one," >&2
@@ -247,7 +268,10 @@ review_at: $when" ;;
     # every weakening before the new commit from what the Stop hook can see.
     wantseal=$(printf '%s\n' "$fm" | grep -E '^seal_sha256:' | head -1 | awk '{print $NF}')
     if [ -z "$wantseal" ]; then
-      echo "seal digest ABSENT: this brief was sealed before seal_sha256 existed, so its approval fields are not integrity-checked"
+      echo "SEAL DIGEST MISSING: this brief records a baseline but no seal_sha256, so its approval"
+      echo "  fields are not protected and the Stop hook will refuse the turn. Seal a new brief for"
+      echo "  this task with the current tool; a seal cannot be added to an existing one."
+      bad=1
     else
       haveseal=$(canonical_seal "$fm" | digest_text) || die "neither sha256sum nor shasum on PATH"
       if [ "$wantseal" = "$haveseal" ]; then echo "seal intact: the approved starting point has not been edited"

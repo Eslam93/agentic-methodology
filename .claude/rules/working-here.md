@@ -48,6 +48,12 @@ search for the same root cause. Same cause with a different symptom means merge,
   token only. Use `scp`, or write the file first with a BOM-less encoding. 2026-08-16.
 - **No `&&`, `||`, `??`, or ternary.** Parse errors, not warnings.
 
+- **A `.ps1` without a UTF-8 BOM is read in the ANSI codepage by PowerShell 5.1**, so every
+  non-ASCII character in the source becomes two wrong ones, and anything the script writes carries
+  them. `install.ps1` gave Windows adopters a corrupted knowledge base for exactly this reason while
+  the bash twin wrote the same text correctly. Give any `.ps1` holding non-ASCII a BOM; `verify.sh`
+  checks it. 2026-09-06.
+
 ## Git and branches
 
 - **A branch that is behind makes the world look like the moment it was cut.** Check any claim about

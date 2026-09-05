@@ -32,10 +32,16 @@ new_kit() {   # a minimal kit the installer will accept
   printf 'skill v1\n' > "$K/.claude/skills/work/SKILL.md"
   printf '# working\n' > "$K/working/README.md"
   cp "$HERE/install.sh" "$K/.claude/tools/install.sh"
+  [ "$have_ps" = 1 ] && cp "$HERE/install.ps1" "$K/.claude/tools/install.ps1"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$K/.claude/tools/verify.sh"   # the real one needs a real kit
 }
 new_proj() { rm -rf "$P"; mkdir -p "$P"; git -C "$P" init -q 2>/dev/null; }
 install_() { bash "$K/.claude/tools/install.sh" "$P" "$@" > "$T/out" 2>&1; echo $?; }
+
+have_ps=0; command -v powershell >/dev/null 2>&1 && have_ps=1
+winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+install_ps() { powershell -NoProfile -ExecutionPolicy Bypass -File "$(winpath "$K/.claude/tools/install.ps1")" \
+                 -Target "$(winpath "$P")" "$@" > "$T/out" 2>&1; echo $?; }
 
 echo "case 1 - initial install"
 new_kit; new_proj
@@ -45,8 +51,7 @@ is "a managed rule was copied"              "$(cat "$P/.claude/rules/standing-or
 is "the manifest exists"                    "$([ -f "$P/$MAN" ] && echo yes)" "yes"
 is "the recorded hash is the file's hash"   "$(man_hash '.claude/rules/standing-orders.md')" "$(sha "$K/.claude/rules/standing-orders.md")"
 has "a version is recorded"                 "$P/$MAN" "version "
-is "every managed file is recorded"         "$(grep -c '^managed ' "$P/$MAN")" 5
-hasnt "the manifest is not project content" "$P/$MAN" "do not edit by hand, honestly"
+is "every managed file is recorded"         "$(grep -c '^managed ' "$P/$MAN")"    "$(find "$K/.claude/rules" "$K/.claude/skills" "$K/.claude/hooks" "$K/.claude/tools" -type f | wc -l | tr -d ' ')"
 
 echo "case 2 - untouched file, changed upstream"
 printf 'rule v2\n' > "$K/.claude/rules/standing-orders.md"
@@ -141,6 +146,54 @@ if diff -q "$T/man.check" "$P/$MAN" >/dev/null; then ok_ "check wrote no manifes
 has "check still says what it would do"      "$T/out" "Updated:"
 has "check says it wrote nothing"            "$T/out" "check only, nothing was written"
 
+echo "check mode on its own is still a preview, not an install"
+new_kit; new_proj
+rc=$(install_ --check)
+is "--check alone exits 0"                    "$rc" 0
+is "--check alone wrote no file"              "$(find "$P" -path "$P/.git" -prune -o -type f -print | wc -l | tr -d ' ')" 0
+has "and says nothing was written"            "$T/out" "check only, nothing was written"
+has "and says what it would have copied"      "$T/out" "Added:"
+
+echo "a file that diverged and was put back rejoins the managed set"
+new_kit; new_proj; install_ >/dev/null
+printf 'rule MINE\n' > "$P/.claude/rules/standing-orders.md"
+printf 'rule v2\n' > "$K/.claude/rules/standing-orders.md"
+install_ --update >/dev/null
+is "while it differs it stays preserved"      "$(cat "$P/.claude/rules/standing-orders.md")" "rule MINE"
+printf 'rule v2\n' > "$P/.claude/rules/standing-orders.md"   # the owner reconciled it by hand
+rc=$(install_ --update)
+is "once reconciled it is managed again"      "$(man_hash '.claude/rules/standing-orders.md')" "$(sha "$K/.claude/rules/standing-orders.md")"
+hasnt "and is no longer reported as modified" "$T/out" "Locally modified, preserved:"
+printf 'rule v3\n' > "$K/.claude/rules/standing-orders.md"
+install_ --update >/dev/null
+is "and a later release updates it normally"  "$(cat "$P/.claude/rules/standing-orders.md")" "rule v3"
+
+echo "a half install reports failure instead of success"
+new_kit; new_proj
+printf 'not a directory\n' > "$P/.claude"      # blocks every copy under .claude/
+rc=$(install_)
+is "a plain install that could not write exits 1" "$rc" 1
+has "and says which files it could not write"     "$T/out" "could NOT be written"
+
+echo "safety - the manifest never claims a write that did not happen"
+new_kit; new_proj
+mkdir -p "$P/.claude/rules/standing-orders.md"     # a directory exactly where a managed file goes
+rc=$(install_)
+is "the directory is still a directory"       "$([ -d "$P/.claude/rules/standing-orders.md" ] && echo yes)" "yes"
+is "the manifest does not claim that file"    "$(man_hash '.claude/rules/standing-orders.md')" ""
+has "and the failure is reported"             "$T/out" "could NOT be written"
+
+echo "safety - a plain install never replaces, even a file it owns and you have not touched"
+new_kit; new_proj; install_ >/dev/null
+printf 'rule v2\n' > "$K/.claude/rules/standing-orders.md"
+rc=$(install_)
+is "a plain re-install exits 0"               "$rc" 0
+is "an untouched managed file is NOT replaced" "$(cat "$P/.claude/rules/standing-orders.md")" "rule v1"
+is "the manifest still records what is on disk" "$(man_hash '.claude/rules/standing-orders.md')" "$(printf 'rule v1\n' > "$T/v1" && sha "$T/v1")"
+has "and it says --update would take it"      "$T/out" "run it again with --update"
+rc=$(install_ --update)
+is "and --update then takes it"               "$(cat "$P/.claude/rules/standing-orders.md")" "rule v2"
+
 echo "safety - a file the adopter created is never managed"
 new_kit; new_proj; install_ >/dev/null
 mkdir -p "$P/.claude/skills/company-thing"; printf 'ours\n' > "$P/.claude/skills/company-thing/SKILL.md"
@@ -154,6 +207,63 @@ rm "$P/.claude/hooks/guard.sh"
 rc=$(install_ --update)
 is "it stays deleted"                        "$([ -e "$P/.claude/hooks/guard.sh" ] && echo present || echo gone)" "gone"
 has "and the deletion is reported"           "$T/out" "Deleted here, not restored:"
+
+# The same states again, driven through the PowerShell installer. The two must classify identically
+# and write the same manifest: an adopter on Windows without Git Bash gets install.ps1 and nothing
+# else, so a divergence here is a divergence in the product, not in a test.
+if [ "$have_ps" = 1 ]; then
+  echo "powershell - the same states through install.ps1"
+  new_kit; new_proj
+  rc=$(install_ps)
+  is "ps: initial install exits 0"             "$rc" 0
+  is "ps: a managed file landed"               "$(cat "$P/.claude/rules/standing-orders.md" 2>/dev/null)" "rule v1"
+  is "ps: its hash is recorded"                "$(man_hash '.claude/rules/standing-orders.md')" "$(sha "$K/.claude/rules/standing-orders.md")"
+  printf 'rule v2\n' > "$K/.claude/rules/standing-orders.md"
+  rc=$(install_ps)
+  is "ps: a plain re-install does not replace"  "$(cat "$P/.claude/rules/standing-orders.md")" "rule v1"
+  rc=$(install_ps -Update)
+  is "ps: update exits 0"                      "$rc" 0
+  is "ps: an untouched file was replaced"      "$(cat "$P/.claude/rules/standing-orders.md")" "rule v2"
+  is "ps: the manifest moved"                  "$(man_hash '.claude/rules/standing-orders.md')" "$(sha "$K/.claude/rules/standing-orders.md")"
+  printf 'rule MINE\n' > "$P/.claude/rules/standing-orders.md"; psmine=$(sha "$P/.claude/rules/standing-orders.md")
+  printf 'rule v3\n' > "$K/.claude/rules/standing-orders.md"
+  rc=$(install_ps -Update)
+  is "ps: update with a local change exits 0"  "$rc" 0
+  is "ps: the local change survives"           "$(cat "$P/.claude/rules/standing-orders.md")" "rule MINE"
+  has "ps: and is reported"                    "$T/out" "Locally modified, preserved:"
+  is "ps: the manifest keeps the upstream basis" "$([ "$(man_hash '.claude/rules/standing-orders.md')" = "$psmine" ] && echo local || echo upstream)" "upstream"
+  printf 'new tool\n' > "$K/.claude/tools/nt.sh"
+  rc=$(install_ps -Update)
+  is "ps: a new upstream file is added"        "$(cat "$P/.claude/tools/nt.sh" 2>/dev/null)" "new tool"
+  printf 'ours\n' > "$P/.claude/skills/work/EXTRA.md"; printf 'theirs\n' > "$K/.claude/skills/work/EXTRA.md"
+  rc=$(install_ps -Update)
+  is "ps: a colliding path is preserved"       "$(cat "$P/.claude/skills/work/EXTRA.md")" "ours"
+  has "ps: and recorded unmanaged"             "$P/$MAN" "unmanaged .claude/skills/work/EXTRA.md"
+  rm "$K/.claude/tools/nt.sh"
+  rc=$(install_ps -Update)
+  is "ps: an upstream removal deletes nothing" "$(cat "$P/.claude/tools/nt.sh")" "new tool"
+  cp "$P/$MAN" "$T/psman"
+  rc=$(install_ps -Update)
+  if diff -q <(grep -v '^installed ' "$T/psman") <(grep -v '^installed ' "$P/$MAN") >/dev/null; then
+    ok_ "ps: idempotent, the manifest is byte-stable"
+  else bad_ "ps: idempotent, the manifest is byte-stable" "it drifted"; fi
+  printf 'rule v9\n' > "$K/.claude/rules/standing-orders.md"; cp "$P/$MAN" "$T/psman2"
+  rc=$(install_ps -Update -Check)
+  is "ps: -Check exits 0"                      "$rc" 0
+  is "ps: -Check changed no file"              "$(cat "$P/.claude/rules/standing-orders.md")" "rule MINE"
+  if diff -q "$T/psman2" "$P/$MAN" >/dev/null; then ok_ "ps: -Check wrote no manifest"
+  else bad_ "ps: -Check wrote no manifest" "the manifest changed"; fi
+
+  echo "powershell - the two installers agree byte for byte"
+  new_kit; new_proj; install_ >/dev/null; cp "$P/$MAN" "$T/from-bash"
+  new_proj; install_ps >/dev/null
+  if diff -q <(grep '^managed ' "$T/from-bash") <(grep '^managed ' "$P/$MAN") >/dev/null; then
+    ok_ "ps: the same managed lines and hashes as bash"
+  else bad_ "ps: the same managed lines and hashes as bash" \
+      "$(diff <(grep '^managed ' "$T/from-bash") <(grep '^managed ' "$P/$MAN") | head -4)"; fi
+else
+  echo "powershell not on PATH; the install.ps1 cases did not run"
+fi
 
 echo
 if [ "$fails" -eq 0 ]; then echo "  $total checks, 0 failed"; else echo "  $total checks, $fails FAILED"; fi

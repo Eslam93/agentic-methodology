@@ -114,6 +114,12 @@ mk "$R"; sed 's/^known_gaps:.*/known_gaps:/' "$KB/_readings/study.md" > "$T/x" &
 run "$R"; check "a required field present but empty"                 1 "required field is empty: known_gaps"
 mk "$R"; printf '# no front matter at all\n' > "$KB/_readings/study.md"
 run "$R"; check "a page with no front matter block"                  1 "no page header"
+mk "$R"; grep -v '^---$' "$KB/_readings/study.md" > "$T/x"; { printf -- '---\n'; cat "$T/x"; } > "$KB/_readings/study.md"
+run "$R"; check "a header opened and never closed"                   1 "never closed"
+mk "$R"; printf -- '---\n' > "$KB/_readings/study.md"
+run "$R"; check "a page that is only an opening fence"               1 "never closed"
+mk "$R"; : > "$KB/_readings/study.md"
+run "$R"; check "an empty page"                                      1 "the page is empty"
 
 echo "controlled vocabularies"
 mk "$R"; sed 's/^status: .*/status: mostly-right/' "$KB/_readings/study.md" > "$T/x" && mv "$T/x" "$KB/_readings/study.md"
@@ -212,6 +218,49 @@ run "$R"; check "an unknown derived quantity"                                   
 mk "$R"; drift one; printf 'stems .claude/nope :: README.md :: [a-z]+ hooks\n' > "$R/.claude/knowledge-drift.conf"
 run "$R"; check "a derived source that does not exist"                               1 "cannot derive stems"
 mk "$R"; run "$R"; check "no conf means no drift checks, not a silent pass"           0 "no drift checks are curated"
+mk "$R"; drift one; printf '# every line is a comment\n' > "$R/.claude/knowledge-drift.conf"
+run "$R"; check "a curated list that produces no check at all"                       1 "produced no checks at all"
+mk "$R"; drift one; printf 'stems .claude/hooks :: README.md :: [a-z-]+ hooks' > "$R/.claude/knowledge-drift.conf"
+run "$R"; check "a conf whose last line has no newline is still read"                0 "counts agree with the tree (1)"
+mk "$R"; drift one
+printf 'Twenty-one hooks, allegedly.\n' > "$R/README.md"
+printf 'stems .claude/hooks :: README.md :: [A-Za-z-]+ hooks\n' > "$R/.claude/knowledge-drift.conf"
+run "$R"; check "a hyphenated number is read as itself, not its last word" 1 "states 21 for stems .claude/hooks, the tree has 1"
+
+echo "line endings"
+mk "$R"; awk '{ printf "%s\r\n", $0 }' "$KB/_readings/study.md" > "$T/crlf" && mv "$T/crlf" "$KB/_readings/study.md"
+run "$R"; check "a page with CRLF endings is read the same way"                      0 "PASS  page header schema"
+mk "$R"; awk '{ printf "%s\r\n", $0 }' "$KB/_readings/study.md" | sed 's/^status: verified/status: nonsense/' > "$T/crlf" && mv "$T/crlf" "$KB/_readings/study.md"
+run "$R"; check "and a CRLF page is still checked, not waved through"                1 "status is not one of the four values"
+
+# Shape B: the base sits at knowledge-base/ at a workspace root above the clones, repo: is a path
+# from that root, and commit: is resolved against every checkout layout.sh reports. Reasoned about
+# and not run is how the hooks' shape-B gap started, so this one is run.
+echo "shape B, a workspace above several checkouts"
+W="$T/ws"; rm -rf "$W"
+mkdir -p "$W/knowledge-base/_readings" "$W/repos/one" "$W/.claude/tools"
+cp "$HERE/layout.sh" "$W/.claude/tools/layout.sh"
+git -C "$W/repos/one" init -q 2>/dev/null
+printf 'x\n' > "$W/repos/one/f.txt"
+git -C "$W/repos/one" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
+git -C "$W/repos/one" -c user.email=t@t -c user.name=t commit -qm one >/dev/null 2>&1
+printf 'WS_REPOS=%s\n' "$W/repos" > "$W/.workspace"
+printf '# kb\n' > "$W/knowledge-base/README.md"
+printf '# pending\n' > "$W/knowledge-base/99-pending.md"
+wsha="$(git -C "$W/repos/one" rev-parse --short=7 HEAD 2>/dev/null)"
+wpage="$W/knowledge-base/_readings/a.md"
+hdr "$wpage" "A workspace page"
+printf 'Evidence: `commit:%s` and `repo:repos/one/f.txt`.\n' "$wsha" >> "$wpage"
+got="$(bash "$KC" "$W" >"$T/out" 2>&1; echo $?)"
+check "the base is found at knowledge-base/ and the shape is B" 0 "shape=B"
+got="$(bash "$KC" "$W" >"$T/out" 2>&1; echo $?)"
+check "repo: and commit: resolve from the workspace root"       0 "references resolve (2 checked)"
+sed "s/commit:$wsha/commit:deadbee/" "$wpage" > "$T/x" && mv "$T/x" "$wpage"
+got="$(bash "$KC" "$W" >"$T/out" 2>&1; echo $?)"
+check "a commit in no checkout of the workspace fails"          1 "referenced commit does not resolve: deadbee"
+printf 'Evidence: `repo:repos/one/missing.txt`.\n' >> "$wpage"
+got="$(bash "$KC" "$W" >"$T/out" 2>&1; echo $?)"
+check "a repo: path missing from the workspace fails"           1 "referenced repository path does not exist: repos/one/missing.txt"
 
 echo "the base itself"
 mk "$R"; rm -rf "$R/docs"; run "$R"; check "no knowledge base at all"                 1 "no knowledge base"

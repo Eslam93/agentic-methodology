@@ -3,7 +3,7 @@ title: Which knowledge-base rules became executable checks, which stayed convent
 status: verified
 as_of: 2026-09-05
 last_verified: 2026-09-05
-verification_method: knowledge-check.sh and its 56 fixture cases run on the owner's Windows machine in Git Bash on 2026-09-05, with the outputs quoted below; the ambiguity measurement was taken by a script over all 21 pages of this base at b4b254f; three deliberate mutations of the validator were run to confirm the canary and the suite go red
+verification_method: knowledge-check.sh and its 68 fixture cases run on the owner's Windows machine in Git Bash on 2026-09-05 and 2026-09-06, with the outputs quoted below; the ambiguity measurement was taken by a script over all 21 pages of this base at b4b254f; three deliberate mutations of the validator were run to confirm the canary and the suite go red
 scope: The change decided as D-20: knowledge-check.sh, its conf and its case suite, the three new verify.sh checks, the canary extension, and the text that describes them. Not semantic evidence validation, not automatic confidence, not executable reverify_when, not truth diff, not contradiction detection, not network validation
 confidence: High for what the tool does and what it refuses to do; each is a command and its output. Medium that the `repo:` and `commit:` convention will be used, since nothing in the base uses it yet and it is proved only by fixtures
 known_gaps: No independent review has run against this change; the owner deferred it for this turn. The validator has never run on macOS or on a second machine, and shape B was reasoned about rather than exercised. Bare backticked paths and bare hex strings are not checked at all, which is most of the evidence in this base. Nothing here decides whether a claim is true
@@ -22,7 +22,7 @@ resolve, or whose README states a count the tree contradicts. It decides structu
 |---|---|
 | `.claude/tools/knowledge-check.sh` | new: the validator, three sections, human output or `--porcelain` |
 | `.claude/tools/knowledge-drift.conf` | new: the curated count list for this repository, with the exclusions and their reasons |
-| `.claude/tools/knowledge-check.test.sh` | new: 56 cases, each building a tree and running the real validator |
+| `.claude/tools/knowledge-check.test.sh` | new: 68 cases, each building a tree and running the real validator |
 | `.claude/tools/verify.sh` | three new checks in the normal run; the suite under `--hooks`; the canary now breaks a record and watches it go red |
 | `README.md` | the tool named; the acceptance sentence corrected; the tool count corrected |
 | `00-orientation/evidence-and-verification-rules.md`, `.claude/rules/knowledge-base.md` | which parts of the header are now mechanically checked, and which are still only asked for |
@@ -94,7 +94,7 @@ whether a `known_gaps` line names anything real.
 
 | Form | Checked how | Count today |
 |---|---|---|
-| a local Markdown link, `[text](<target>)` | resolved from the page's own folder; anchors dropped, `%20` decoded | 18 |
+| a local Markdown link, `[text](<target>)` | resolved from the page's own folder; anchors dropped, `%20` decoded | 17 |
 | a backticked `../<target>` or `./<target>` | resolved from the page's own folder | 19 |
 | `repo:<path>` | resolved from the project root | 0 |
 | `commit:<sha>` | `git cat-file -e <sha>^{commit}` in each checkout | 0 |
@@ -135,7 +135,7 @@ run, including
 `status: partially-verified` and older dates are valid and stay valid.
 
 The 150-to-400-line rule in section 15 is **not** enforced, and this is a real gap rather than an
-oversight: 12 of the 20 durable pages are below 150 lines today, so a check would be red on arrival
+oversight: 12 of the 21 durable pages are below 150 lines today, so a check would be red on arrival
 for a rule the base has never followed. Recorded in `99-pending.md` as a decision for the owner:
 enforce it and split the pages, or change the rule to match the practice.
 
@@ -181,12 +181,12 @@ two of them fail:
 ```
   FAIL  missing required field: known_gaps       expected exit 1 got 0
   FAIL  a required field present but empty       expected exit 1 got 0
-  56 cases, 2 FAILED
+  2 of the cases FAILED
 ```
 
 A third mutation, deleting the local-link check, failed three cases: the broken link, the broken
 link carrying an anchor, and the real link written beside a quoted example. All three mutations were
-reverted and the suite returned to 56 and 0.
+reverted and the suite returned to green.
 
 ## Shape A and shape B
 
@@ -212,7 +212,7 @@ this change adds two scripts, and the check caught that too before the README wa
 
 ## The suite, and the cost
 
-`bash .claude/tools/knowledge-check.test.sh`: **56 cases, 0 failed**. Each builds a project root,
+`bash .claude/tools/knowledge-check.test.sh`: **68 cases, 0 failed**. Each builds a project root,
 mutates one thing, runs the real validator, and asserts the exit code **and** a substring of the
 message, so a check that fails for the wrong reason does not count as a pass. Nothing in the suite
 greps the validator's source.
@@ -270,3 +270,37 @@ been the wrong repair.
 - The tool is bash only, like every other file in `.claude/tools/` except the installer. The hooks
   ship in both shells because the host launches whichever it runs on; a verification tool is
   started by `verify.sh`, which is bash, so a PowerShell twin would have no caller.
+
+## What an independent review found, 2026-09-06
+
+The change above was reviewed the next day by six independent readers, each running the validator
+rather than reading it, and each finding verified by a second reader who tried to refute it. Five
+defects in this layer held, and all five are fixed with a case each.
+
+**A page whose header is never closed passed.** The parser opened the front matter at line 1 and
+closed it only on a bare `---`; with no closing fence the whole document was read as header, so
+prose further down could supply a valid `status:` after an invalid one and the page passed. Three
+separate red cases could be defeated at once this way. An unterminated header is now malformed and
+says so. Found independently by the owner's own probe and by the review.
+
+**A hyphenated number was read as its last word.** The curated patterns anchor on `[a-z]+`, so
+"twenty-one hooks" matched as the fragment "one hooks" and was read as 1. A README claiming
+twenty-one agreed with a tree holding one, silently, which is the exact drift this section exists to
+catch. `numword` now reads the tens-and-units forms.
+
+**CRLF pages were treated differently on the two platforms.** The field parser stripped the carriage
+return and the fence test did not, so the same bytes reported "no page header" on Linux and passed
+on Windows. The fence lines are stripped too now.
+
+**A curated list that produced no comparison reported PASS.** Removing `.claude/knowledge-drift.conf`
+turned six checks into zero and `verify.sh` still printed a positively worded green, which is the
+empty-set trap this repository records against itself in `working-here.md`. A missing list is now a
+note rather than a pass, a list that yields nothing is a failure, and a conf whose last line has no
+trailing newline no longer loses that line in silence.
+
+**Deleting the validator removed three checks with no complaint.** `verify.sh` now fails when a
+knowledge base exists and `knowledge-check.sh` does not, because a green run over an unchecked base
+is worse than a red one.
+
+Two documented numbers were also wrong and are corrected above: the case count, and 18 local
+Markdown links where there are 17.

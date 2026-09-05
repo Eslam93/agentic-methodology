@@ -116,6 +116,24 @@ if [ -d .claude/hooks ]; then
   else bad "every hook ships in both shells" "missing a pair for:$unpaired"; fi
 fi
 
+# --- 4b · a PowerShell file carrying non-ASCII needs a UTF-8 BOM --------------------------------
+# Windows PowerShell 5.1 decodes a BOM-less .ps1 in the system ANSI codepage, so a UTF-8 character
+# in the source is read as two wrong characters and written back corrupted. install.ps1 shipped a
+# mangled knowledge-base skeleton to every Windows adopter this way until 2026-09-06, while the bash
+# twin wrote the same text correctly.
+psfiles=0; psbad=""; pshas=0
+for f in .claude/hooks/*.ps1 .claude/tools/*.ps1; do
+  [ -f "$f" ] || continue
+  psfiles=$((psfiles+1))
+  LC_ALL=C grep -q $'[^\t -~]' "$f" || continue
+  pshas=$((pshas+1))
+  [ "$(head -c3 "$f" | od -An -tx1 | tr -d ' \n')" = "efbbbf" ] || psbad="$psbad $(basename "$f")"
+done
+if [ "$psfiles" -eq 0 ]; then note "no PowerShell files to check for encoding"
+elif [ -n "$psbad" ]; then bad "a PowerShell file with non-ASCII carries a UTF-8 BOM" \
+  "PowerShell 5.1 reads these in the ANSI codepage and corrupts what they write:$psbad"
+else ok "PowerShell encoding safe ($psfiles files, $pshas with non-ASCII, each with a BOM)"; fi
+
 # --- 5 · always-loaded rule budget, a ratchet -------------------------------------------------
 if [ -d .claude/rules ]; then
   files=0; total=0; scoped=0; detail=""
@@ -160,6 +178,11 @@ fi
 # Structural validity is not truth. A green here says the pages carry the header the rules require
 # and that every reference this can identify resolves. It says nothing about whether a claim on any
 # of those pages is correct; that is a reader's job and an independent review's.
+if [ -n "$kb" ] && [ ! -f .claude/tools/knowledge-check.sh ]; then
+  # A missing validator must not remove three checks from the report without a word: that is a
+  # green run over an unchecked knowledge base, which is worse than a red one.
+  bad "knowledge integrity ran" "there is a knowledge base at $kb but no .claude/tools/knowledge-check.sh; nothing checked it"
+fi
 if [ -n "$kb" ] && [ -f .claude/tools/knowledge-check.sh ]; then
   kcout="$(bash .claude/tools/knowledge-check.sh --porcelain 2>&1)"
   if [ -z "$kcout" ]; then
@@ -172,8 +195,11 @@ if [ -n "$kb" ] && [ -f .claude/tools/knowledge-check.sh ]; then
           seen_section=$((seen_section+1))
           rest="${l#SECTION }"; sec="${rest%% *}"
           rest="${rest#* }";    verdict="${rest%% *}"; detail="${rest#* }"
-          if [ "$verdict" = "PASS" ]; then ok "knowledge $sec: $detail"
-          else bad "knowledge $sec" "$detail"; fi ;;
+          case "$verdict" in
+            PASS) ok "knowledge $sec: $detail" ;;
+            NONE) note "knowledge $sec: $detail" ;;
+            *)    bad "knowledge $sec" "$detail" ;;
+          esac ;;
       esac
     done <<< "$kcout"
     [ "$seen_section" -eq 0 ] && bad "knowledge integrity ran" "no section result came back; the check is not reporting"

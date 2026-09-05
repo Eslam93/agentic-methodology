@@ -1,4 +1,4 @@
-<#
+﻿<#
     Install or update the kit in a repository (shape A) or a workspace above several clones (shape B).
 
         powershell -File <kit>\.claude\tools\install.ps1 -Target <dir> [-Shape A|B] [-Repos <dir>]
@@ -81,10 +81,23 @@ if (Test-Path $ManifestPath) {
 }
 
 $rAdded=@(); $rUpdated=@(); $rUnchanged=@(); $rModified=@(); $rUnverified=@()
-$rRemovedLocal=@(); $rUpstreamGone=@(); $rFailed=@(); $copied = 0
+$rRemovedLocal=@(); $rUpstreamGone=@(); $rFailed=@(); $rOutdated=@(); $copied = 0
 $manifestBody = @()
 
-function Sync-Managed([bool]$Apply) {
+# Write, then prove the bytes landed. A destination that is a directory, a full disk, or a
+# read-only file must never end with the manifest recording a version that is not there.
+function Install-ManagedFile([string]$Src, [string]$Dest, [string]$Want) {
+    if (Test-Path $Dest -PathType Container) { return $false }
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Dest) | Out-Null
+        Copy-Item $Src $Dest -Force
+    } catch { return $false }
+    return ((Get-FileSha256 $Dest) -eq $Want)
+}
+
+# $Apply is false for -Check, which writes nothing. $Replace is true only for -Update: a plain
+# install never replaces an existing file, which is the promise in this script's header.
+function Sync-Managed([bool]$Apply, [bool]$Replace) {
     $newFiles = Get-ManagedFiles
     $newSet = @{}; foreach ($f in $newFiles) { $newSet[$f] = $true }
     foreach ($rel in $newFiles) {
@@ -98,11 +111,8 @@ function Sync-Managed([bool]$Apply) {
         if (-not $old) {
             if (-not $loc) {
                 if ($Apply) {
-                    try {
-                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destPath) | Out-Null
-                        Copy-Item $srcPath $destPath -Force
-                        $script:copied++
-                    } catch { $script:rFailed += $rel; continue }
+                    if (-not (Install-ManagedFile $srcPath $destPath $up)) { $script:rFailed += $rel; continue }
+                    $script:copied++
                 }
                 $script:rAdded += $rel; $script:manifestBody += "managed $up $rel"
             } elseif ($loc -eq $up) {
@@ -123,16 +133,23 @@ function Sync-Managed([bool]$Apply) {
         } elseif ($loc -eq $old) {
             if ($up -eq $old) {
                 $script:rUnchanged += $rel; $script:manifestBody += "managed $up $rel"
+            } elseif (-not $Replace) {
+                # still ours and still untouched, but replacing it is what -Update is for. Record
+                # what is actually on disk, which is the old version.
+                $script:rOutdated += $rel; $script:manifestBody += "managed $old $rel"
             } else {
                 if ($Apply) {
-                    try {
-                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destPath) | Out-Null
-                        Copy-Item $srcPath $destPath -Force
-                        $script:copied++
-                    } catch { $script:rFailed += $rel; $script:manifestBody += "managed $old $rel"; continue }
+                    if (-not (Install-ManagedFile $srcPath $destPath $up)) {
+                        $script:rFailed += $rel; $script:manifestBody += "managed $old $rel"; continue
+                    }
+                    $script:copied++
                 }
                 $script:rUpdated += $rel; $script:manifestBody += "managed $up $rel"
             }
+        } elseif ($loc -eq $up) {
+            # diverged once and now byte-identical to this release: it has converged, so it rejoins
+            # the managed set rather than being reported as modified for the rest of its life.
+            $script:rUnchanged += $rel; $script:manifestBody += "managed $up $rel"
         } else {
             # changed since install. Keep the LAST UPSTREAM hash, never the local one: the manifest
             # records what to compare against, not whatever happens to be there.
@@ -140,12 +157,14 @@ function Sync-Managed([bool]$Apply) {
         }
     }
     # managed once, gone from this release: reported, never deleted
-    foreach ($rel in $oldHash.Keys) {
+    # Sorted, because a hashtable's key order is not defined and the report should read the same
+    # way twice for the same tree.
+    foreach ($rel in ($oldHash.Keys | Sort-Object)) {
         if ($newSet.ContainsKey($rel)) { continue }
         $script:rUpstreamGone += $rel
         $script:manifestBody += ("managed " + $oldHash[$rel] + " " + $rel)
     }
-    foreach ($rel in $wasUnmanaged.Keys) {
+    foreach ($rel in ($wasUnmanaged.Keys | Sort-Object)) {
         if ($newSet.ContainsKey($rel)) { continue }
         $script:manifestBody += "unmanaged $rel"
     }
@@ -175,13 +194,19 @@ function Report([string]$Label, $List) {
     foreach ($f in $List) { Write-Output "  $f" }
 }
 
-if ($Update) {
-    if (-not (Test-Path (Join-Path $Target '.claude'))) { throw "no .claude\ in $Target; run the installer without -Update first" }
-    if (-not (Test-Path $ManifestPath)) {
+if ($Update -or $Check) {
+    # -Check comes down this path with or without -Update, because the one thing it must never do
+    # is write. Read on its own it used to fall through to a full install, which is the opposite of
+    # a preview and the easiest typo to make.
+    if ($Update -and -not (Test-Path (Join-Path $Target '.claude'))) { throw "no .claude\ in $Target; run the installer without -Update first" }
+    if ($Update -and -not (Test-Path $ManifestPath)) {
         Write-Output "no $ManifestRel here: this installation predates it. Files identical to this release are adopted; anything that differs is left alone and listed, because nothing records what it started as."
     }
-    Sync-Managed (-not $Check)
-    if ($Check) { Write-Output "check only, nothing was written. Version on offer: $(Get-KitVersion)" }
+    Sync-Managed (-not $Check) ([bool]$Update)
+    if ($Check) {
+        Write-Output "check only, nothing was written. Version on offer: $(Get-KitVersion)"
+        if (-not $Update) { Write-Output 'This is what a first install would copy; add -Update to preview an update instead.' }
+    }
     else { Write-Manifest }
     Write-Output ''
     Report 'Updated:'                                 $rUpdated
@@ -190,6 +215,7 @@ if ($Update) {
     Report 'Present but never recorded, left alone:'  $rUnverified
     Report 'Deleted here, not restored:'              $rRemovedLocal
     Report 'Upstream removed, left in place:'         $rUpstreamGone
+    Report 'Older than this release, not replaced:'   $rOutdated
     Report 'FAILED:'                                  $rFailed
     Write-Output ''
     if ($rFailed.Count -gt 0) {
@@ -197,13 +223,17 @@ if ($Update) {
         exit 1
     }
     $nMod = $rModified.Count + $rUnverified.Count
-    Write-Output "update complete. $nMod file(s) were preserved for you to reconcile; nothing was merged or overwritten."
-    Write-Output 'Rules and hooks load at session start, so start a new session after this update.'
+    if ($Check) {
+        Write-Output "nothing was written. $nMod file(s) would be preserved for you to reconcile."
+    } else {
+        Write-Output "update complete. $nMod file(s) were preserved for you to reconcile; nothing was merged or overwritten."
+        Write-Output 'Rules and hooks load at session start, so start a new session after this update.'
+    }
     exit 0
 }
 
-Sync-Managed $true
-$kept = @($rUnchanged + $rUnverified)
+Sync-Managed $true $false
+$kept = @($rUnchanged + $rUnverified + $rOutdated)
 
 function Hook([string]$name) { return "powershell -NoProfile -ExecutionPolicy Bypass -File \`"`${CLAUDE_PROJECT_DIR}/.claude/hooks/$name.ps1\`"" }
 $settings = @"
@@ -225,7 +255,7 @@ $settings = @"
 $utf8 = New-Object System.Text.UTF8Encoding $false
 $settingsPath = Join-Path $Target '.claude\settings.json'
 if (Test-Path $settingsPath) {
-    [IO.File]::WriteAllText((Join-Path $Target '.claude\settings.kit.json'), $settings.Replace("`r`n", "`n"), $utf8)
+    [IO.File]::WriteAllText((Join-Path $Target '.claude\settings.kit.json'), $settings.Replace("`r`n", "`n").TrimEnd("`n") + "`n", $utf8)
     Write-Output "settings.json already exists; the kit's hooks are in .claude\settings.kit.json. Merge the hooks block by hand and delete that file."
 } else {
     [IO.File]::WriteAllText($settingsPath, $settings.Replace("`r`n", "`n"), $utf8)
@@ -328,7 +358,7 @@ reverify_when: Whenever a decision is made or superseded
 One entry per real fork, newest first. Fields: decision · options considered · why · decided by · reversible or not · revisit when · supersedes.
 "@
     foreach ($pair in @(@('README.md', $readme), @('00-orientation\index.md', $index), @('99-pending.md', $pending), @('decisions.md', $decisions))) {
-        [IO.File]::WriteAllText((Join-Path $kb $pair[0]), $pair[1].Replace("`r`n", "`n"), $utf8)
+        [IO.File]::WriteAllText((Join-Path $kb $pair[0]), $pair[1].Replace("`r`n", "`n").TrimEnd("`n") + "`n", $utf8)
     }
 }
 
@@ -344,6 +374,19 @@ Write-Manifest
 Write-Output "copied $copied files into $Target\.claude\"
 if ($kept.Count -gt 0) { Write-Output ("left alone (already existed): " + ($kept -join ' ')) }
 Write-Output ("recorded " + ($manifestBody | Where-Object { $_ -like 'managed *' }).Count + " managed files in $ManifestRel (" + (Get-KitVersion) + ")")
+if ($rRemovedLocal.Count -gt 0) {
+    Write-Output 'these managed files are recorded but not present here; they were not restored:'
+    foreach ($f in $rRemovedLocal) { Write-Output "  $f" }
+}
+if ($rFailed.Count -gt 0) {
+    Write-Output 'these managed files could NOT be written, and the manifest does not claim them:'
+    foreach ($f in $rFailed) { Write-Output "  $f" }
+}
+if ($rOutdated.Count -gt 0) {
+    Write-Output 'these managed files are older than this release and were NOT replaced, because a plain install never overwrites:'
+    foreach ($f in $rOutdated) { Write-Output "  $f" }
+    Write-Output 'run it again with -Update to take them.'
+}
 Write-Output "To take a later release: install.ps1 -Target $Target -Update   (add -Check to preview)"
 Write-Output ''
 Write-Output "Next: open the assistant at $Target and say: read START-HERE.md and follow it."
@@ -351,3 +394,6 @@ Write-Output 'Rules and hooks load at session start, so start a new session afte
 Write-Output ''
 $bash = (Get-Command bash -ErrorAction SilentlyContinue).Source
 if ($bash) { & $bash (Join-Path $Target '.claude/tools/verify.sh') } else { Write-Output 'bash not found; run .claude/tools/verify.sh from Git Bash.' }
+# A half install must not report success.
+if ($rFailed.Count -gt 0) { exit 1 }
+exit 0
