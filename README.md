@@ -38,7 +38,7 @@ volatile status.** That boundary is the design.
 
 ## What is in the box
 
-Four rules, ten skills, four hooks, eight tools. Install is a copy.
+Four rules, ten skills, four hooks, nine tools. Install is a copy, and an update replaces only what you have not changed.
 
 | Part | What it does |
 |---|---|
@@ -155,6 +155,44 @@ The reasoning is all recorded, with what each decision superseded and when to re
 - [`what-we-do-not-know.md`](docs/knowledge-base/00-orientation/what-we-do-not-know.md): the gaps, by root cause
 - [`_investigations/`](docs/knowledge-base/_investigations/): the commands and commits behind every number, and the acceptance results
 
+## Updating an installation
+
+The kit is copied into your repository on purpose, so you can read it, review it in your pull
+requests, pin it with your history, and change it. That makes upgrading a real question, so the
+installer records what it gave you, in `.claude/install-manifest.txt`: the release, and the SHA-256
+of every managed file as delivered. It is installer metadata, not project content, and you do not
+edit it by hand.
+
+```bash
+bash <kit>/.claude/tools/install.sh <your-repo> --update --check   # say what would change
+bash <kit>/.claude/tools/install.sh <your-repo> --update           # do it
+```
+
+An update replaces **only** files whose content still matches the manifest, which is the one thing
+it can prove you have not changed. Content, never a timestamp.
+
+| Your file | What happens |
+|---|---|
+| untouched since install | replaced with the new version |
+| you changed it | **preserved**, and listed under "Locally modified, preserved" |
+| new in this release | installed, unless a file is already at that path |
+| a path you already had | left alone and listed; the installer never assumes ownership |
+| removed from the kit | left in place and listed. Nothing is ever deleted |
+| you deleted it | not restored. Removing a control is a decision, not a gap |
+| yours, not the kit's | invisible to the updater. It manages only what it shipped |
+
+**Nothing is merged.** No three-way merge, no conflict markers, no backup files, no model. A file
+you changed has deliberately stepped outside automatic replacement and stays exactly as you left it
+until you reconcile it yourself. That also means **a customized file does not receive later upstream
+changes**: the updater tells you which files diverged, and the reconciliation is yours.
+
+An update that preserves your files still succeeded, and exits 0. A non-zero exit means the updater
+could not do its job, not that you have local changes.
+
+If you installed before the manifest existed, the first update adopts every file that is already
+byte-identical to the new release, and leaves everything else alone: without a record of what you
+started from, "original" and "customized" cannot be told apart, and the installer will not guess.
+
 ## Status and limits
 
 `v2.0.0`, 2026-09-05. Seventeen acceptance tests, seventeen passed, seven of them live on the Claude
@@ -177,6 +215,7 @@ install it, write your own limits down the same way.
   skills/           orient · work · codex-relay · test-guide · pr · board · record · handoff · explain · summarize
   hooks/            guard-secrets · guard-commands · verify-on-finish · resume-brief, each .ps1 and .sh
   tools/            layout.sh · verify.sh · hooks.test.sh · baseline.sh · knowledge-check.sh · install.sh · install.ps1
+  install-manifest.txt  what the installer gave you, so an update can tell your edits from ours
   settings.json     the hook wiring
 docs/knowledge-base/  this repository's knowledge base
 working/            disposable; only its README is committed

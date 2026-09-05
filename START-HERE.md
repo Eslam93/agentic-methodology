@@ -83,6 +83,11 @@ bash <kit>/.claude/tools/install.sh <target> --shape B --repos <folder containin
 
 Or on Windows without Git Bash: `powershell -File <kit>\.claude\tools\install.ps1 -Target <dir> -Shape A`.
 
+The installer writes `.claude/install-manifest.txt`, which records the release and the hash of
+every file it gave you. Say what it is for in one sentence: a later `--update` replaces only the
+files the owner has not changed, preserves and lists the ones they have, and never merges or
+deletes. `--check` shows what an update would do without doing it.
+
 The installer copies `.claude/` without overwriting anything, writes `settings.json` with hook
 commands for this operating system (or `settings.kit.json` beside an existing one, to merge by
 hand), creates `working/README.md`, the knowledge-base skeleton, the ignore and attribute lines,

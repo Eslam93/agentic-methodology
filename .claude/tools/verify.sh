@@ -220,6 +220,12 @@ if [ "$mode" = "--hooks" ]; then
     if bash .claude/tools/knowledge-check.test.sh; then ok "knowledge-check.test.sh passed"
     else bad "knowledge-check.test.sh passed" "an invalid record passed, or a valid one failed; see above"; fi
   else bad "knowledge-check.test.sh present" "missing"; fi
+
+  echo; note "installer cases (the real installer run against a fake kit, one per update state)"
+  if [ -f .claude/tools/install.test.sh ]; then
+    if bash .claude/tools/install.test.sh; then ok "install.test.sh passed"
+    else bad "install.test.sh passed" "the updater overwrote something it should have preserved, or preserved something it should have updated; see above"; fi
+  else bad "install.test.sh present" "missing"; fi
 fi
 
 # --- 14 · the project's own checks, only with --full ----------------------------------------------

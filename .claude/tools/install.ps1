@@ -1,17 +1,30 @@
 <#
-    Install the kit into a repository (shape A) or a workspace above several clones (shape B).
+    Install or update the kit in a repository (shape A) or a workspace above several clones (shape B).
 
         powershell -File <kit>\.claude\tools\install.ps1 -Target <dir> [-Shape A|B] [-Repos <dir>]
+        powershell -File <kit>\.claude\tools\install.ps1 -Target <dir> -Update
+        powershell -File <kit>\.claude\tools\install.ps1 -Target <dir> -Update -Check
 
     Same behaviour as install.sh: copies .claude/ without overwriting, writes settings.json with
     PowerShell hook commands (or settings.kit.json beside an existing one), creates working/, the
     knowledge-base skeleton, the ignore and attribute lines, then runs verify.sh through bash if
     bash is available (Git for Windows provides it).
+
+    THE UPDATE MODEL, identical to install.sh and sharing its manifest format. The kit is copied
+    into the adopter's repository on purpose, so the rules and hooks that govern a project are
+    readable in it, reviewed in its pull requests, pinned with its history, and changeable locally.
+    .claude/install-manifest.txt records the sha256 of each managed file as delivered, and an update
+    replaces only files whose current hash still matches that record. Anything the adopter changed
+    is preserved and reported. Nothing is merged, no conflict markers, no backups, no LLM.
+    Modification is decided by content, never by a timestamp, and absence of manifest data is never
+    permission to overwrite.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Target,
     [ValidateSet('A', 'B')][string]$Shape = 'A',
-    [string]$Repos = ''
+    [string]$Repos = '',
+    [switch]$Update,
+    [switch]$Check
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,19 +34,176 @@ if (-not (Test-Path (Join-Path $kit '.claude\rules'))) { throw "kit not found at
 if (-not (Test-Path $Target)) { throw "target does not exist: $Target" }
 $Target = (Resolve-Path $Target).Path
 
-$kept = @(); $copied = 0
-foreach ($sub in 'rules', 'skills', 'hooks', 'tools') {
-    $src = Join-Path $kit ".claude\$sub"
-    if (-not (Test-Path $src)) { continue }
-    Get-ChildItem -Path $src -Recurse -File | ForEach-Object {
-        $rel = $_.FullName.Substring($kit.Length).TrimStart('\')
-        $dest = Join-Path $Target $rel
-        if (Test-Path $dest) { $script:kept += $rel; return }
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
-        Copy-Item $_.FullName $dest
-        $script:copied++
+# --- managed files, the manifest, and the one classification table ---------------------------
+# Managed means "shipped by this kit", and the list comes from the kit, never from scanning the
+# target: an adopter's own skill, hook, rule, or tool must never be taken for upstream content.
+$ManifestRel = '.claude/install-manifest.txt'
+$ManifestPath = Join-Path $Target '.claude\install-manifest.txt'
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+
+function Get-ManagedFiles {
+    $out = @()
+    foreach ($sub in 'rules', 'skills', 'hooks', 'tools') {
+        $src = Join-Path $kit ".claude\$sub"
+        if (-not (Test-Path $src)) { continue }
+        Get-ChildItem -Path $src -Recurse -File | ForEach-Object {
+            $out += ($_.FullName.Substring($kit.Length).TrimStart('\') -replace '\\', '/')
+        }
+    }
+    $arr = [string[]]$out
+    [Array]::Sort($arr, [System.StringComparer]::Ordinal)
+    return $arr
+}
+# The bytes on disk, not the text: nothing here reads a file as text and writes it back, so the
+# same file always hashes the same way and a newline never moves under the installer.
+function Get-FileSha256([string]$Path) {
+    if (-not (Test-Path $Path -PathType Leaf)) { return $null }
+    return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+function Get-KitVersion {
+    $git = (Get-Command git -ErrorAction SilentlyContinue).Source
+    if ($git) {
+        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try {
+            $v = & $git -C $kit describe --tags --always 2>$null
+            if ($LASTEXITCODE -eq 0 -and $v) { return (@($v) -join '').Trim() }
+        } catch { } finally { $ErrorActionPreference = $prev }
+    }
+    return 'unknown'
+}
+
+$oldHash = @{}; $wasUnmanaged = @{}
+if (Test-Path $ManifestPath) {
+    foreach ($line in (Get-Content $ManifestPath)) {
+        if ($line -cmatch '^managed ([0-9a-f]+) (.+)$')  { $oldHash[$Matches[2]] = $Matches[1] }
+        elseif ($line -cmatch '^unmanaged (.+)$')        { $wasUnmanaged[$Matches[1]] = $true }
     }
 }
+
+$rAdded=@(); $rUpdated=@(); $rUnchanged=@(); $rModified=@(); $rUnverified=@()
+$rRemovedLocal=@(); $rUpstreamGone=@(); $rFailed=@(); $copied = 0
+$manifestBody = @()
+
+function Sync-Managed([bool]$Apply) {
+    $newFiles = Get-ManagedFiles
+    $newSet = @{}; foreach ($f in $newFiles) { $newSet[$f] = $true }
+    foreach ($rel in $newFiles) {
+        $srcPath  = Join-Path $kit ($rel -replace '/', '\')
+        $destPath = Join-Path $Target ($rel -replace '/', '\')
+        $up = Get-FileSha256 $srcPath
+        if (-not $up) { $script:rFailed += $rel; continue }
+        $old = if ($oldHash.ContainsKey($rel)) { $oldHash[$rel] } else { $null }
+        $loc = Get-FileSha256 $destPath
+
+        if (-not $old) {
+            if (-not $loc) {
+                if ($Apply) {
+                    try {
+                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destPath) | Out-Null
+                        Copy-Item $srcPath $destPath -Force
+                        $script:copied++
+                    } catch { $script:rFailed += $rel; continue }
+                }
+                $script:rAdded += $rel; $script:manifestBody += "managed $up $rel"
+            } elseif ($loc -eq $up) {
+                # byte-identical to what this release ships, so adopting it loses nothing
+                $script:rUnchanged += $rel; $script:manifestBody += "managed $up $rel"
+            } else {
+                # A path that exists and was never recorded: an adopter's own file, or an older
+                # upstream version from an install predating the manifest. Those cannot be told
+                # apart, so it is never overwritten and never recorded as an upstream basis.
+                $script:rUnverified += $rel; $script:manifestBody += "unmanaged $rel"
+            }
+            continue
+        }
+
+        if (-not $loc) {
+            # deleted here on purpose; restoring it would put back a control the adopter removed
+            $script:rRemovedLocal += $rel; $script:manifestBody += "managed $old $rel"
+        } elseif ($loc -eq $old) {
+            if ($up -eq $old) {
+                $script:rUnchanged += $rel; $script:manifestBody += "managed $up $rel"
+            } else {
+                if ($Apply) {
+                    try {
+                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destPath) | Out-Null
+                        Copy-Item $srcPath $destPath -Force
+                        $script:copied++
+                    } catch { $script:rFailed += $rel; $script:manifestBody += "managed $old $rel"; continue }
+                }
+                $script:rUpdated += $rel; $script:manifestBody += "managed $up $rel"
+            }
+        } else {
+            # changed since install. Keep the LAST UPSTREAM hash, never the local one: the manifest
+            # records what to compare against, not whatever happens to be there.
+            $script:rModified += $rel; $script:manifestBody += "managed $old $rel"
+        }
+    }
+    # managed once, gone from this release: reported, never deleted
+    foreach ($rel in $oldHash.Keys) {
+        if ($newSet.ContainsKey($rel)) { continue }
+        $script:rUpstreamGone += $rel
+        $script:manifestBody += ("managed " + $oldHash[$rel] + " " + $rel)
+    }
+    foreach ($rel in $wasUnmanaged.Keys) {
+        if ($newSet.ContainsKey($rel)) { continue }
+        $script:manifestBody += "unmanaged $rel"
+    }
+}
+
+function Write-Manifest {
+    $head = @(
+        '# methodology installation manifest. Written by install.ps1.',
+        '# Installer metadata, not project content: it records the upstream version of each managed',
+        '# file so a later update can tell a file you have not touched from one you changed. An',
+        '# update replaces only the first kind. Do not edit by hand; delete it only to start over,',
+        '# which makes every managed file unverifiable again.',
+        ("version " + (Get-KitVersion)),
+        ("installed " + (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))
+    )
+    $body = [string[]]$manifestBody
+    [Array]::Sort($body, [System.StringComparer]::Ordinal)
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ManifestPath) | Out-Null
+    $text = (($head + $body) -join "`n") + "`n"
+    [IO.File]::WriteAllText("$ManifestPath.tmp", $text, $utf8NoBom)
+    Move-Item "$ManifestPath.tmp" $ManifestPath -Force
+}
+
+function Report([string]$Label, $List) {
+    if (-not $List -or $List.Count -eq 0) { return }
+    Write-Output $Label
+    foreach ($f in $List) { Write-Output "  $f" }
+}
+
+if ($Update) {
+    if (-not (Test-Path (Join-Path $Target '.claude'))) { throw "no .claude\ in $Target; run the installer without -Update first" }
+    if (-not (Test-Path $ManifestPath)) {
+        Write-Output "no $ManifestRel here: this installation predates it. Files identical to this release are adopted; anything that differs is left alone and listed, because nothing records what it started as."
+    }
+    Sync-Managed (-not $Check)
+    if ($Check) { Write-Output "check only, nothing was written. Version on offer: $(Get-KitVersion)" }
+    else { Write-Manifest }
+    Write-Output ''
+    Report 'Updated:'                                 $rUpdated
+    Report 'Added:'                                   $rAdded
+    Report 'Locally modified, preserved:'             $rModified
+    Report 'Present but never recorded, left alone:'  $rUnverified
+    Report 'Deleted here, not restored:'              $rRemovedLocal
+    Report 'Upstream removed, left in place:'         $rUpstreamGone
+    Report 'FAILED:'                                  $rFailed
+    Write-Output ''
+    if ($rFailed.Count -gt 0) {
+        Write-Output 'the update did not complete: the files under FAILED were not written, and the manifest still records their previous version'
+        exit 1
+    }
+    $nMod = $rModified.Count + $rUnverified.Count
+    Write-Output "update complete. $nMod file(s) were preserved for you to reconcile; nothing was merged or overwritten."
+    Write-Output 'Rules and hooks load at session start, so start a new session after this update.'
+    exit 0
+}
+
+Sync-Managed $true
+$kept = @($rUnchanged + $rUnverified)
 
 function Hook([string]$name) { return "powershell -NoProfile -ExecutionPolicy Bypass -File \`"`${CLAUDE_PROJECT_DIR}/.claude/hooks/$name.ps1\`"" }
 $settings = @"
@@ -94,7 +264,20 @@ This knowledge base is committed $where. Record here the reason this shape was c
 
 The path-scoped rule ``.claude/rules/knowledge-base.md`` loads whenever a file here is touched. Never a secret value. Describe the system, not the people. Keep negative results. Never assert a changeable condition in the present tense: write the measurement, dated, with its source.
 "@
+    $today = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
     $index = @"
+---
+title: Where every page is, and what each one settles
+status: draft
+as_of: $today
+last_verified: $today
+verification_method: Written by the kit installer; no page here has been measured yet
+scope: This knowledge base only
+confidence: Low. It is a skeleton, and each row is added when its first measured page exists
+known_gaps: Everything. Nothing here has been written from a measurement
+reverify_when: Every time a page is added, superseded, or removed
+---
+
 # Index
 
 ## Start with one of these
@@ -128,6 +311,18 @@ Everything found and not acted on. One line each, same turn, grouped by who can 
 ## 4 · Worth doing when someone is in that code anyway
 "@
     $decisions = @"
+---
+title: Every decision in force, what each superseded, and when to revisit it
+status: draft
+as_of: $today
+last_verified: $today
+verification_method: Written by the kit installer; no decision has been recorded yet
+scope: Decisions about this project, not about the kit
+confidence: Low. It is empty until the first real fork is recorded
+known_gaps: Every decision taken before this file existed is unrecorded
+reverify_when: Whenever a decision is made or superseded
+---
+
 # Decisions
 
 One entry per real fork, newest first. Fields: decision · options considered · why · decided by · reversible or not · revisit when · supersedes.
@@ -145,8 +340,11 @@ if ($Shape -eq 'B') {
     }
 }
 
+Write-Manifest
 Write-Output "copied $copied files into $Target\.claude\"
 if ($kept.Count -gt 0) { Write-Output ("left alone (already existed): " + ($kept -join ' ')) }
+Write-Output ("recorded " + ($manifestBody | Where-Object { $_ -like 'managed *' }).Count + " managed files in $ManifestRel (" + (Get-KitVersion) + ")")
+Write-Output "To take a later release: install.ps1 -Target $Target -Update   (add -Check to preview)"
 Write-Output ''
 Write-Output "Next: open the assistant at $Target and say: read START-HERE.md and follow it."
 Write-Output 'Rules and hooks load at session start, so start a new session after this install.'

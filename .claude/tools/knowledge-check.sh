@@ -228,8 +228,8 @@ if [ -f "$kb/decisions.md" ]; then
   defined=" $( { grep -oE '^### +[DVS]-[0-9][0-9]' "$kb/decisions.md" | sed 's/^### *//'
                  grep -oE '^\| *[DVS]-[0-9][0-9] *\|' "$kb/decisions.md" | tr -d '| '; } \
                | sort -u | tr '\n' ' ')"
-  [ "$(printf '%s' "$defined" | tr -d ' ')" = "" ] && \
-    fail references "$kb/decisions.md" "no decision entry found; the id pattern is broken, not the tree"
+  # An empty set is only evidence of a broken pattern when something actually cites a decision. A
+  # knowledge base on its first day has no decisions and no citations, and must not fail for it.
 fi
 
 resolve() {   # dir target -> 0 when it exists. Anchors are not part of a path; %20 is a space.
@@ -281,12 +281,15 @@ while IFS= read -r page; do
         [ "$found" = 1 ] || fail references "$page" "referenced commit does not resolve: $value"
         ;;
       code)
-        [ -n "$defined" ] || continue
         s_references=$((s_references+1))
-        case "$defined" in
-          *" $value "*) ;;
-          *) fail references "$page" "cites a decision that decisions.md does not define: $value" ;;
-        esac
+        if [ "$(printf '%s' "$defined" | tr -d ' ')" = "" ]; then
+          fail references "$page" "cites $value, but decisions.md defines no decision at all; the id pattern is broken, not the tree"
+        else
+          case "$defined" in
+            *" $value "*) ;;
+            *) fail references "$page" "cites a decision that decisions.md does not define: $value" ;;
+          esac
+        fi
         ;;
     esac
   done < "$TMP/refs"
@@ -327,7 +330,7 @@ numword() {
   esac
 }
 
-conf=".claude/tools/knowledge-drift.conf"
+conf=".claude/knowledge-drift.conf"
 if [ ! -f "$conf" ]; then
   [ "$porcelain" = 1 ] || printf '  ----  no %s; no drift checks are curated for this project\n' "$conf"
 else
