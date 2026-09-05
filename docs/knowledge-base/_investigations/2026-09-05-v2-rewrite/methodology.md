@@ -59,6 +59,25 @@ Shallow clone of `github.com/affaan-m/ecc` on 2026-09-05: head `e04ea0b` dated 2
 runtime directories. Its connector policy of 2026-06 retired six default MCP servers in favour of
 skills wrapping CLIs and REST APIs.
 
+## Hook behaviour on the desktop app, measured
+
+| Measurement | Result |
+|---|---|
+| `guard-secrets.ps1` wired as a `PreToolUse` hook on `Edit\|Write` in this repository's `.claude/settings.json`, written during the session on 2026-09-05 | fired on the next Write without a session restart, exit 2, stderr shown to the assistant as the tool error. The blocked write targeted a file outside the repository, so the hook applies to every Write in the session, not only to project files |
+| what it caught | a test-script line carrying a connection string with a server field and a password field on one line. The false-positive cases, a `const password = process.argv[2]` line and a token-shape description, were not blocked |
+| a false positive it produced | prose describing those two field names on one line, in a knowledge-base edit. Fixed the same day by excluding whitespace and backticks from the password value class; a real connection-string password has neither |
+
+A negative result from the same session: the source installations set `MSYS_NO_PATHCONV=1` in
+`settings.json` to stop MSYS rewriting `gh api /repos/...` and `cmd /c`. With it set, measured
+2026-09-05 in Git Bash: `git -C /d/SourceCode/methodology log -1` fails with "cannot change to:
+No such file or directory" while `git -C D:/SourceCode/methodology` succeeds; without it, both
+work and `gh api repos/...` without the leading slash works. The variable was removed from the kit.
+
+The "hooks do not hot-reload" advice from other installations did not hold for a project
+`settings.json` created mid-session on this build (Claude Code desktop app, Windows, 2026-09-05).
+Restarting after a hook change remains the safe instruction. This row records that the reload
+happened, not that it is guaranteed.
+
 ## Claude Code documentation facts
 
 Read from the official documentation by a research subagent on 2026-09-05; none exercised here:
