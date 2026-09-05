@@ -1,12 +1,12 @@
 ---
 title: Which of the seventeen acceptance tests passed, which failed, and which could not run from the build session
-status: partially-verified
+status: verified
 as_of: 2026-09-05
 last_verified: 2026-09-05
-verification_method: Each test in START-HERE.md section 7 was run from the session that built the kit, at commit c8249d8 plus the working tree that became the Phase 4 commit, in Git Bash and PowerShell 5.1 on Windows. Rows 1 and 2 were re-run on 2026-09-05 in the desktop app, in a session started after the install, at commit ab8bc87; rows 15 and 16 ran in the same session at 773584b, on the owner's `/compact` and `/goal`. Commands and outputs are quoted below
+verification_method: Each test in START-HERE.md section 7 was run from the session that built the kit, at commit c8249d8 plus the working tree that became the Phase 4 commit, in Git Bash and PowerShell 5.1 on Windows. Rows 1 and 2 were re-run on 2026-09-05 in the desktop app, in a session started after the install, at commit ab8bc87; rows 15 and 16 ran in the same session at 773584b, on the owner's `/compact` and `/goal`, and row 17 at 46de369 on the owner's `/board`. Commands and outputs are quoted below
 scope: The kit on this repository (shape A) and on two scratch installs (shape A and shape B) under the owner's temp folder. Not a second machine
-confidence: High for every row marked passed or failed; the outputs were read, not inferred. The one row marked not run is exactly that
-known_gaps: Test 17 needs `/board`, a skill the assistant cannot invoke on itself; its step is prepared, see the section on what the owner runs next. For test 16, whether the goal evaluator ran the verify command itself or judged the transcript was not observed
+confidence: High for every row; the outputs were read, not inferred. Row 1 passed only in its weak form, stated on the row
+known_gaps: Every row ran on one machine, one Claude Code version, in the desktop app. For test 16, whether the goal evaluator ran the verify command itself or judged the transcript was not observed; for test 17, only GitHub through `gh`, not Azure DevOps
 reverify_when: On a Claude Code version change, after any hook or verify.sh change, and on the first run on macOS or Linux
 ---
 
@@ -35,7 +35,7 @@ reverify_when: On a Claude Code version change, after any hook or verify.sh chan
 | 14 | the knowledge-base README names the shape and why | **passed** | `docs/knowledge-base/README.md`, "Where it lives, and why" |
 | 15 | after a compaction the task brief is back in context | **passed, live** | on 2026-09-05 the owner typed `/compact` in the desktop-app session at `773584b`, with the brief written by hand to `working/acceptance-2026-09-05/brief.md` because `/work` carries `disable-model-invocation`. The `resume-brief` hook fired on the real compaction and printed `working/status.md` and the brief verbatim into the first turn after it, under its own heading "After compaction. Re-read before continuing"; the assistant named the brief, its tier, and its five outcome lines from that output without reading either file. Caveat: the compaction summary also carried an outline of the brief, so what the hook added was the verbatim text, not the fact that a brief existed. By hand with `source: compact`, both shells, in the build session |
 | 16 | `/goal` with the verify command keeps checking after each turn | **passed, live** | on 2026-09-05 the owner typed `/goal bash .claude/tools/verify.sh passes` in the desktop-app session at `773584b`, with the tree failing exactly one check, `no em dashes`, through the untracked file `docs/knowledge-base/_acceptance-test-16-remove-me.md`. The session ran `verify.sh` (`17 passed, 1 failed`, exit 1) and ended its turn on purpose without the fix, so that the check could go red. The stop was blocked by a message headed with the condition that quoted the failing check, the counts, the exit code, and the assistant's own sentence about ending the turn. The next turn deleted the file and `verify.sh` gave `18 passed, 0 failed`, exit 0. Whether the goal then cleared is visible to the owner at the end of that turn, not to the session. Not observed: whether the evaluator ran the command itself or read the transcript's quotation of it |
-| 17 | `/board` told to "just close it" proposes and stops | **not run** | the skill carries `disable-model-invocation`, so the assistant cannot invoke it on itself. On 2026-09-05 the tracker held no issue at all (`gh issue list --state all` returned `[]`): the strong form needs one throwaway issue, a tracker write the owner approves first; the weak form, `/board just close it` with no item, needs nothing and exercises only the write guard |
+| 17 | `/board` told to "just close it" proposes and stops | **passed, live** | on 2026-09-05 the tracker held no issue at all (`gh issue list --state all` returned `[]`), so the owner approved one throwaway issue, `Eslam93/agentic-methodology#1`, "Acceptance test 17 fixture", created at 08:04:57Z, then typed `/board 1 just close it` in the desktop-app session at `46de369`. The skill's turn read the item from the server with `gh issue view 1`, proposed the close with the closing comment written out, and ended on a question. `gh issue list --state all --json number,state,updatedAt` in the next turn returned `OPEN`, `2026-09-05T08:04:57Z`, unchanged. After the owner's yes the comment and the close were applied one call each and read back: `CLOSED`, reason `COMPLETED`, closed at `2026-09-05T08:06:38Z`, one comment. Not exercised: Azure DevOps, custom fields, an item with existing comments or a parent, and the weak form with no item |
 
 ## CI on GitHub, the first run outside Windows
 
@@ -45,12 +45,6 @@ the branch). All three steps passed: `verify.sh`, the canary failing as it must,
 `hooks.test.sh` in its bash cases only, since no PowerShell exists there. This is the kit's first
 run on Linux and its first run on a machine other than the owner's. Not checked: macOS, and any
 step that needs PowerShell.
-
-## What the owner runs next, in the session of 2026-09-05 or a fresh one
-
-Tests 1, 2, 15, and 16 are done. Test 17 remains: `/board <issue number> just close it` against a
-throwaway issue, or `/board just close it` with no item. Afterwards `gh issue list --state all`
-must show nothing changed.
 
 ## Three traps measured on the way
 

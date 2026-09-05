@@ -6,7 +6,7 @@ last_verified: 2026-09-05
 verification_method: Every claim traces to a file read, a git command, or a gh api call recorded in ../_investigations/2026-09-05-v2-rewrite/methodology.md
 scope: The agentic-methodology repository and the kit it is becoming. Not the private installations the kit was derived from
 confidence: High for structure and history, which were directly observed. The description of v2 describes a plan until Phases 2 to 4 land
-known_gaps: The always-loaded rules, the path-scoped rule, the resume-brief hook on a real compaction, and one /goal cycle were observed in a session started after the install on 2026-09-05; a live /board has not been exercised; see what-we-do-not-know.md. No second machine, no second person, no macOS run; Linux only through CI
+known_gaps: The always-loaded rules, the path-scoped rule, the resume-brief hook on a real compaction, one /goal cycle, and a live /board were observed in a session started after the install on 2026-09-05; see what-we-do-not-know.md. No second machine, no second person, no macOS run; Linux only through CI
 reverify_when: After each phase of the v2 plan lands, and before any release tag
 ---
 
