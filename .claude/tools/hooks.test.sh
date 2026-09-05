@@ -152,8 +152,8 @@ mkdir -p "$R/working/task-2"; printf -- '---\nowner: someone\n---\n\n# brief\n' 
 (cd "$R" && bash "$HERE/baseline.sh" seal task-2 >/dev/null 2>&1)
 total=$((total+1)); if grep -q "owner-wip.txt" "$R/working/task-2/pre-existing.txt" && grep -q '^pre_existing: 1$' "$R/working/task-2/brief.md"; then echo "  ok    seal records a pre-existing untracked file"; else echo "  FAIL  seal missed the pre-existing file"; fails=$((fails+1)); fi
 total=$((total+1)); if grep -q '^owner: someone$' "$R/working/task-2/brief.md"; then echo "  ok    seal keeps front matter the brief already had"; else echo "  FAIL  seal dropped existing front matter"; fails=$((fails+1)); fi
-(cd "$R" && bash "$HERE/baseline.sh" seal task-2 >/dev/null 2>&1); rc=$?
-total=$((total+1)); if [ "$rc" -ne 0 ]; then echo "  ok    seal refuses to re-seal without --force"; else echo "  FAIL  seal re-sealed silently"; fails=$((fails+1)); fi
+(cd "$R" && bash "$HERE/baseline.sh" seal task-2 >"$T/reseal.out" 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "does not move" "$T/reseal.out"; then echo "  ok    seal refuses to re-seal a sealed brief"; else echo "  FAIL  seal re-sealed a sealed brief"; fails=$((fails+1)); fi
 (cd "$R" && bash "$HERE/baseline.sh" check task-2 >/dev/null 2>&1); rc=$?
 total=$((total+1)); if [ "$rc" -eq 0 ]; then echo "  ok    check passes on an unchanged brief"; else echo "  FAIL  check failed on an unchanged brief"; fails=$((fails+1)); fi
 printf 'changed after approval\n' >> "$R/working/task-2/brief.md"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The task baseline: the approved starting point, written into the task's own brief.
 #
-#   bash .claude/tools/baseline.sh seal  <task> [--force]   record the approval in the brief
+#   bash .claude/tools/baseline.sh seal  <task>             record the approval in the brief
 #   bash .claude/tools/baseline.sh check <task>             brief unchanged; every commit still reachable
 #   bash .claude/tools/baseline.sh close <task>             the task is accepted; the Stop hook goes back to HEAD
 #
@@ -28,7 +28,7 @@ set -uo pipefail
 usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 die()   { echo "baseline.sh: $*" >&2; exit 1; }
 
-cmd="${1:-}"; task="${2:-}"; flag="${3:-}"
+cmd="${1:-}"; task="${2:-}"
 [ -z "$cmd" ] && usage
 [ -z "$task" ] && usage
 
@@ -72,9 +72,10 @@ closed=0; printf '%s\n' "$fm" | grep -Eq '^closed_at:' && closed=1
 
 case "$cmd" in
   seal)
-    if [ "$sealed" = 1 ] && [ "$flag" != "--force" ]; then
-      echo "baseline.sh: working/$task/brief.md is already sealed. A baseline does not move once sealed." >&2
-      echo "If the owner changed the agreement, re-seal deliberately with --force and say so; if the task is done, close it." >&2
+    if [ "$sealed" = 1 ]; then
+      echo "baseline.sh: working/$task/brief.md is already sealed, and a seal does not move." >&2
+      echo "A changed agreement is a new task: write the new brief under working/<new-task>/ and seal that one," >&2
+      echo "so the original approval stays readable beside it. There is no way to re-seal in place." >&2
       exit 1
     fi
     [ -n "$(digest_tool)" ] || die "neither sha256sum nor shasum on PATH"

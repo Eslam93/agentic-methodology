@@ -81,9 +81,10 @@ after a compaction the `resume-brief` hook reads it back, so the build continues
 rather than from a summary. Then seal it: `bash .claude/tools/baseline.sh seal <task>` writes the
 approval time, the digest of the agreed text, and the commit every checkout is at into that brief's
 own front matter, and lists the files already dirty in `working/<task>/pre-existing.txt`. That
-commit is the task's baseline: the Stop hook diffs tests against it until the task closes, and it
-does not move when you commit. Re-seal only when the owner changes the agreement, with `--force`,
-and say so. A real fork decided here goes to `decisions.md` through `/record`.
+commit is the task's baseline: the Stop hook diffs tests against it, and it does not move when you
+commit. A seal cannot be moved: if the owner changes the agreement, write the new brief under a new
+task folder and seal that, so the original approval stays readable beside it. A real fork decided
+here goes to `decisions.md` through `/record`.
 
 ## 4 · Route: what the yes decided
 

@@ -74,7 +74,8 @@ in the checkout at all: `HEAD`. Each fallback prints a note; none of them blocks
 writes a baseline.
 
 **Instructed only (layer b).** That `/work` seals at the yes, checks the digest at hand-back, and
-closes at acceptance; that the assistant re-seals only with `--force` and says so; that commits use
+closes at acceptance; that a changed agreement becomes a new task brief rather than a moved seal,
+which the tool enforces by refusing to seal twice; that commits use
 `git add -- <paths>` and never sweep the files in `pre-existing.txt`; that an edit to a pre-existing
 file is asked about once. No hook checks any of these. In particular, nothing stops the assistant
 closing a brief early, and nothing stops `git add -A`; `guard-commands` has no entry for it, by D-11.
@@ -96,7 +97,7 @@ blocked (2) · a closed brief does not disable the open one (2) · the finding n
 rebased task branch compared from the merge-base (2) · the rewritten baseline is announced · closed
 brief falls back to HEAD (0) · nonexistent baseline commit falls back to HEAD (0) · the fallback is
 announced. Then five for the tool: seal records a pre-existing untracked file · seal keeps front
-matter the brief already had · seal refuses to re-seal without `--force` · check passes on an
+matter the brief already had · seal refuses to re-seal a sealed brief · check passes on an
 unchanged brief · check detects a brief changed after approval.
 
 The first run of the new cases failed nine times, all in the tests, not the hooks: `git mv` has no
