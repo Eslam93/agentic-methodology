@@ -15,6 +15,7 @@ This is the index of what is open, not the evidence for it.
 
 ## 3 · We can do these ourselves
 
+- `P2` `explain` and `summarize` carry an `allowed-tools` list that reads as a restriction but only pre-approves those tools, and `Bash(cat *)` pre-approves a `cat >` overwrite. Drop the lists or say what they are for. Evidence: the front matter of `.claude/skills/explain/SKILL.md` and `.claude/skills/summarize/SKILL.md`, 2026-09-05.
 - `P1` Promote or prune the auto-memory notes on the owner's other repositories: 84 notes on one project used as a knowledge base, 6 on the public site including two stale status notes. Evidence: the investigation page.
 - `P2` Independent re-verification of the v1 research citations, deferred since 2026-06. Evidence: `_readings/evidence-base.md`.
 - `P2` Codex now has its own hooks file format, seen in `ecc` 2.2.1. The secret preflight could run on the Codex side too. Not evaluated.
