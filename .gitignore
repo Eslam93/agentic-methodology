@@ -1,3 +1,14 @@
-.agents.lint.tmp
+# Disposable session state: status, handoffs, task briefs, scratch evidence. Never committed.
+working/*
+!working/README.md
+
+# The worked example stays local. The Portfolio repository is the public source for it.
+examples/portfolio/
+
+# Local-only harness overrides and reviewer session state
+.claude/settings.local.json
+codex-relay.json
+
+# Scratch
 *.tmp
 combined.txt

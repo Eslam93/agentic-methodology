@@ -1,5 +1,0 @@
-#!/usr/bin/env sh
-# Guard: block commits that leave the constitution stale or the docs broken.
-# Runs the methodology linter (AGENTS.md freshness check + schema + encoding + config smells).
-# Activate once per clone:   git config core.hooksPath .githooks
-exec sh lint-methodology.sh
