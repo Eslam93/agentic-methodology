@@ -7,6 +7,7 @@ This is the index of what is open, not the evidence for it.
 ## 1 · Only the owner can answer these
 
 - `?` The standalone `communication-modes` repository still uses persistent-mode wording, and v2 deletes the modes altogether. Delete it, archive it, or leave it. Evidence: `decisions.md` S-08.
+- `?` The project rule says to confirm before any push because nothing has been pushed since 2026-06-23, but `main` and `v2.0.0` reached `origin` on 2026-09-05 (`git ls-remote`, orient 2026-09-05). Keep the confirmation and drop the stale reason, or drop both. Evidence: `.claude/rules/methodology.md`, "Confirm before".
 
 ## 2 · Needs a decision
 
