@@ -32,5 +32,5 @@ kit (what adopters copy) · harness (the `.claude/` folder in use) · knowledge 
 
 ## Confirm before
 
-Beyond the standing orders: any push, since nothing has been pushed since 2026-06-23 and the owner
-decides how the v1 commits go out; any deletion under `docs/knowledge-base/`.
+Beyond the standing orders: any push, because the repository is public and `main` is its only
+branch, so every push publishes; any deletion under `docs/knowledge-base/`.

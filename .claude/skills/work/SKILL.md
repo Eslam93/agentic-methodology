@@ -29,7 +29,7 @@ has no stop. Tier 2 stops once. Tier 3 stops once, adds a decision entry, and ge
 - **A design link** named in the item: fetch the frame when a design connector is available,
   otherwise ask for an export. Many links point at a whole section, not a screen; drill into the
   child frames. The acceptance criteria without the screen are half the specification.
-- **A whole feature or epic:** say so and propose phases (1b). It does not fit one session.
+- **A whole feature or epic:** say so and propose phases (2b). It does not fit one session.
 
 ## 2 · Understand: you do the reading, they do the deciding
 
@@ -50,12 +50,12 @@ you understood, and **only the questions whose answer would change what gets bui
 message. If you can answer a question yourself, answer it and state it as an assumption they can
 correct. Repeat until satisfied, and say so.
 
-**1a · Who else is in this code.** When a remote exists: `git fetch origin --prune`,
+**2a · Who else is in this code.** When a remote exists: `git fetch origin --prune`,
 `git log --oneline --since="3 weeks ago" --all -- <the paths you will touch>`,
 `git branch -r --sort=-committerdate | head -20`, and the open pull requests on the same
 repository. Say what you found before proposing anything, including when you found nothing.
 
-**1b · Bigger than a session: phases.** Split by dependency, not by ticket. Name what each phase
+**2b · Bigger than a session: phases.** Split by dependency, not by ticket. Name what each phase
 makes possible and put the hardest unknown in its own phase. Each phase gets a brief a fresh session
 can execute cold, in `working/<task>/phases/<n>.md`.
 
@@ -68,30 +68,32 @@ A bottom line of what you are about to do, then the details, in the house writin
   <trigger>, then <observable result>, verified by <how>*. Three to seven lines for a normal task;
   the full brief when the change touches security, persistent data, a migration, or another system
 - the phases · who else is in the code · what needs investigating first · decisions that will be
-  needed later, flagged now rather than sprung at hour three · what is out of scope
+  needed later, flagged now rather than raised in the middle of the build · what is out of scope
 - **the branch sentence:** which repository, cut from which branch after a fetch, following the
   project rule's branch model; which branch the pull request targets. When the repository does not
   follow the model, put the evidence in front of them and ask one question with the options named
-- the tier line
+- the tier line, and the route: Codex design review first, or go, with the default stated. Tier 3
+  review, Tier 2 offer it, Tier 1 go
 
 Then stop. **That is the only approval you ask for.** If they change something, fold it in and
 restate only what changed. Write the agreed summary and checklist to `working/<task>/brief.md`:
 after a compaction the `resume-brief` hook reads it back, so the build continues from the agreement
 rather than from a summary. A real fork decided here goes to `decisions.md` through `/record`.
 
-## 4 · Route: design review, or go
+## 4 · Route: what the yes decided
 
-Ask: **Codex design review first, or go?** Defaults: Tier 3 review, Tier 2 offer it, Tier 1 go.
-If review: `/codex-relay plan` with the full brief, up to the configured rounds. Fold what the
-evidence supports, push back only with evidence, then go.
+The route was a line in the agree message, so it is settled by the same yes. If it was a design
+review: `/codex-relay plan` with the full brief, up to the configured rounds. Fold what the evidence
+supports, push back only with evidence, then go. Otherwise go.
 
 ## 5 · Build: uninterrupted
 
 - **Commit a checkpoint first.** Git is the undo; the session's own checkpoints do not track changes
   made through the shell.
-- **Set the goal only when the finish condition is machine-decidable:** `/goal` with the verify
-  command and the checklist lines a check can prove. When it is not decidable, the brief file is the
-  goal. A goal a machine cannot judge sends a loop toward the wrong target.
+- **Ask for a goal only when the finish condition is machine-decidable.** `/goal` is typed by the
+  owner, never by the assistant (measured 2026-09-05): ask for `/goal` with the verify command and
+  the checklist lines a check can prove. When it is not decidable, the brief file is the goal. A
+  goal a machine cannot judge sends a loop toward the wrong target.
 - **Follow the pattern that already exists.** If two disagree, say which you follow and why.
 - **Write the tests as part of the work.** For a bug, the failing test that reproduces it first, and
   check that it fails before the fix. Name the tests that prove each checklist line. If there is no

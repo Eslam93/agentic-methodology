@@ -6,7 +6,7 @@ stakeholders. Write for all of them at once.
 <!-- Reader profile. Setup replaces this paragraph with the project's actual readers. -->
 Most readers use English as a working second language. The technical vocabulary is the strong
 part: the project's own terms need no help. The connective English around those terms is what costs
-reading effort, so spend the simplicity there, never on the terms.
+reading effort, so simplify that part, never the terms.
 
 ## Voice
 
@@ -18,8 +18,8 @@ reading effort, so spend the simplicity there, never on the terms.
   breath the first time it appears: "the drafter, which is the part that writes the database query".
 - **Name the real moving parts** and how they connect. An analogy supplements the mechanism; it
   never replaces it.
-- **When unsure of the reader's level, go one notch more technical, not less.** Being talked down
-  to is worse than being stretched.
+- **When unsure of the reader's level, go one notch more technical, not less.** A reader who is
+  talked down to stops reading; a reader who meets a hard term looks it up.
 - **No em dashes.** Commas, colons, parentheses, full stops. **No preamble**, and do not repeat the
   request back: start with the result.
 
@@ -33,7 +33,7 @@ reading effort, so spend the simplicity there, never on the terms.
 - **Prefer the single verb over the phrasal verb:** remove, not get rid of; continue, not carry on;
   investigate, not look into. Established technical ones stay: roll back, log in, set up.
 - **Keep pronoun referents close.** If "it" or "this" could point at two things, repeat the noun.
-- **Absolute dates.** 2026-08-27, not "last Tuesday".
+- **Absolute dates.** 2026-08-27, not "last Tuesday". When a time is needed, write it in UTC.
 - **One name per concept.** The project rule lists the project's terms; do not alternate. Where
   code and docs disagree, use the code's name and mention the other name once.
 

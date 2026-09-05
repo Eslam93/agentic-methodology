@@ -23,8 +23,8 @@ same discipline the knowledge base uses, applied to a sentence.
 
 ## Audience
 
-Ask for the audience if it was not given, one question, then proceed. If no answer comes, assume the
-owner and say so. The audience changes the answer more than the topic does.
+If no audience was given, assume the owner and say so; do not spend a turn asking. The audience
+changes the answer more than the topic does.
 
 | Audience | Pitch |
 |---|---|
