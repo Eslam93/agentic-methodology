@@ -10,14 +10,21 @@ known_gaps: Only JavaScript-shaped fixtures were exercised; the assertion heuris
 reverify_when: On any change to baseline.sh, either verify-on-finish hook, or hooks.test.sh; before quoting the case count
 ---
 
+> **Amended the same day by D-18.** This page records what this change shipped, in the past tense
+> where D-18 replaced it hours later: the Stop hook no longer reads every sealed brief and decides
+> which are open, and `baseline.sh close` and the `closed_at` key are gone. A session-scoped pointer
+> now names the one brief whose baseline applies, and the fallback rules below are unchanged. The
+> sentences that describe the replaced parts are marked. See
+> `../2026-09-05-active-task/methodology.md`.
+
 ## What changed, and where
 
 | File | Change |
 |---|---|
-| `.claude/tools/baseline.sh` | new: `seal`, `check`, `close`, writing into the brief's front matter |
+| `.claude/tools/baseline.sh` | new: `seal`, `check`, and (until D-18) `close`, writing into the brief's front matter |
 | `.claude/hooks/verify-on-finish.sh`, `.ps1` | compare test files against the sealed brief's commit, with rename detection and an added-file case; fall back to `HEAD` or a merge-base with a note; the workspace marker now wins over `.git` at cwd |
 | `.claude/tools/hooks.test.sh` | 35 new cases: 15 per shell plus 5 for the tool; the scratch repository ignores `working/` and carries a multi-line fixture |
-| `.claude/skills/work/SKILL.md` | step 3 seals the brief; step 5 keeps commits on task-owned paths and leaves pre-existing files alone; step 7 checks the digest before reporting and closes at acceptance |
+| `.claude/skills/work/SKILL.md` | step 3 seals the brief; step 5 keeps commits on task-owned paths and leaves pre-existing files alone; step 7 checks the digest before reporting, and closed the baseline at acceptance until D-18 removed that step |
 | `.claude/skills/pr/SKILL.md` | the clean-tree precondition no longer tells the assistant to commit or stash the owner's pre-existing files |
 | `.claude/skills/codex-relay/SKILL.md` | "the last checkpoint commit" becomes the task baseline; the relay's own point is no longer called a baseline |
 | `.claude/rules/standing-orders.md` | seal before an autonomous run, or commit a checkpoint when there is no brief to seal |
@@ -34,7 +41,7 @@ approved_at: <UTC, ISO seconds>
 baseline_commit.<checkout>: <full commit>     # one line per checkout
 brief_sha256: <sha256 of the text below the front matter>
 pre_existing: <count>
-closed_at: <UTC>                              # added by close
+closed_at: <UTC>                              # added by close; removed by D-18
 ```
 
 `working/<task>/pre-existing.txt` beside it holds `git status --porcelain --untracked-files=all`
@@ -59,46 +66,48 @@ baseline itself did not move: only where it is stored changed.
 
 ## What is enforced, what is instructed, what is not verified
 
-**Mechanically detected (layer c).** For each brief carrying an unclosed seal, and each checkout it
-names, the Stop hook runs `git diff --name-status -M <commit>` against the working tree, so every
-change since approval counts, committed or not. A test file (`.test.`, `.spec.`, `Tests.cs`, under
+**Mechanically detected (layer c).** For each brief carrying an unclosed seal, and each checkout
+it names, which D-18 narrowed to the one brief this session carries, the Stop hook runs
+`git diff --name-status -M <commit>` against the working tree, so every change since approval
+counts, committed or not. A test file (`.test.`, `.spec.`, `Tests.cs`, under
 `tests/` or `__tests__/`) that is deleted, that lost assertion markers, that gained skip markers, or
 that was renamed and lost assertions, blocks the turn with exit 2. Every finding names the commit
 and the brief it was measured against. A test file added during the task has no version at the
 baseline, so it is compared against `HEAD`, which is what the hook did before this change.
 
-**Fallback (layer c).** No brief with an open seal, or none naming this checkout: compare against
-`HEAD`, exactly as before. A sealed commit rewritten by a rebase, amend, or squash: compare from
+**Fallback (layer c).** No brief with an open seal, or none naming this checkout, which D-18
+restated as no pointer for this session or none naming this checkout: compare against `HEAD`,
+exactly as before. A sealed commit rewritten by a rebase, amend, or squash: compare from
 `git merge-base <sealed> HEAD`, so the weakening stays visible. A sealed commit that does not exist
 in the checkout at all: `HEAD`. Each fallback prints a note; none of them blocks, and the hook never
 writes a baseline.
 
-**Instructed only (layer b).** That `/work` seals at the yes, checks the digest at hand-back, and
-closes at acceptance; that a changed agreement becomes a new task brief rather than a moved seal,
-which the tool enforces by refusing to seal twice; that commits use
+**Instructed only (layer b).** That `/work` seals at the yes and checks the digest at hand-back;
+that a changed agreement becomes a new task brief rather than a moved seal, which the tool enforces
+by refusing to seal twice; that commits use
 `git add -- <paths>` and never sweep the files in `pre-existing.txt`; that an edit to a pre-existing
-file is asked about once. No hook checks any of these. In particular, nothing stops the assistant
-closing a brief early, and nothing stops `git add -A`; `guard-commands` has no entry for it, by D-11.
+file is asked about once. No hook checks any of these. In particular, nothing stops `git add -A`;
+`guard-commands` has no entry for it, by D-11. Closing a baseline early was a hole here and is gone
+with `close` itself, under D-18.
 
 **Not verified.** The live Stop hook on the desktop app against a committed weakening in a real
 session. Shape B end to end: the marker-wins ordering was fixed and fired by hand in a scratch
-workspace, but no suite case covers a workspace. Two briefs open at once is evaluated one after the
-other by design, and the active-task pointer, deferred to its own change, would replace `closed_at`
-as the way the hook knows which brief is in flight.
+workspace, but no suite case covers a workspace.
 
 ## The suite, 2026-09-05
 
-`bash .claude/tools/hooks.test.sh`: **65 passed, 0 failed**, both shells, against 30 before this
-change. The section "verify-on-finish with a task baseline", fifteen checks per shell: seal recorded
-the commit in the brief · the approved text survives sealing · sealed clean tree allowed (0) ·
-committed weakening blocked (2) · the block names the task baseline · staged rename plus removed
-assertion blocked (2) · the block names the rename · a test added during the task then weakened
-blocked (2) · a closed brief does not disable the open one (2) · the finding names the open brief ·
-rebased task branch compared from the merge-base (2) · the rewritten baseline is announced · closed
-brief falls back to HEAD (0) · nonexistent baseline commit falls back to HEAD (0) · the fallback is
-announced. Then five for the tool: seal records a pre-existing untracked file · seal keeps front
-matter the brief already had · seal refuses to re-seal a sealed brief · check passes on an
-unchanged brief · check detects a brief changed after approval.
+`bash .claude/tools/hooks.test.sh` when this change landed: **65 passed, 0 failed**, both shells,
+against 30 before it. The count moved again within the day, to 107, when D-18 replaced the
+open-seal scan and the review strengthened several cases; the current cases are listed on that
+page. What this change added and D-18 kept:
+seal recorded the commit in the brief · the approved text survives sealing · sealed clean tree
+allowed · committed weakening blocked · the block names the task baseline · staged rename plus
+removed assertion blocked · the block names the rename · a test added during the task then weakened
+blocked · rebased task branch compared from its merge-base · the rewritten baseline is announced ·
+a nonexistent baseline commit falls back to HEAD · the fallback is announced · seal records a
+pre-existing untracked file · seal keeps front matter the brief already had · seal refuses to
+re-seal a sealed brief · check passes on an unchanged brief · check detects a brief changed after
+approval.
 
 The first run of the new cases failed nine times, all in the tests, not the hooks: `git mv` has no
 `-q`; the scratch repository did not ignore `working/`, so `git add -A` staged the seal and
@@ -134,9 +143,9 @@ were fixed in this change:
 1. **A test added during the task was invisible.** `A` in the diff was handled by no branch, so a
    test the task committed and then weakened passed. Fixed by comparing an added file against
    `HEAD`, and covered by a case.
-2. **A closed task hid every open one.** The old selector took the newest file and dropped it if
-   closed, and `close` bumped that file's modification time. The design change removes the selector
-   altogether; a case now proves a closed brief does not disable an open one.
+2. **A closed task hid every open one.** The selector took the newest file and dropped it if
+   closed, and `close` bumped that file's modification time. The fix removed the selector; D-18 then
+   removed closing itself, so the case that proved it became the two-session isolation case.
 3. **The hooks classified a shape-B root as shape A.** They tested `.git` before `.workspace`, so a
    workspace root, which is itself a checkout by D-02, was inspected alone and its clones never
    were. The ordering was pre-existing; the tool disagreeing with it was new. Both now let the
@@ -174,6 +183,6 @@ hooks documentation, so no fallback note reaches the assistant.
   weakening. Harmless here, and a reminder that the heuristic is lexical.
 - The digest covers the text below the front matter, so an edit to the front matter itself is not
   what `check` compares; the recorded commit is checked against git separately.
-- A merge or pull that legitimately deletes a test keeps blocking until the brief is closed or
-  re-sealed. That is the friction D-17 accepted; the block names the file, and a real incident is
-  what would earn a waiver.
+- A merge or pull that legitimately deletes a test keeps blocking for the rest of the session, since
+  D-18 leaves no way to retire a baseline early and a seal cannot move. That is the friction D-17
+  accepted; the block names the file, and a real incident is what would earn a waiver.

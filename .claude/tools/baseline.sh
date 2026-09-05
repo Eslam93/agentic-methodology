@@ -1,27 +1,34 @@
 #!/usr/bin/env bash
-# The task baseline: the approved starting point, written into the task's own brief.
+# The task baseline: the approved starting point, written into the task's own brief, and the
+# binding that makes that brief the active task for this Claude session.
 #
-#   bash .claude/tools/baseline.sh seal  <task>             record the approval in the brief
-#   bash .claude/tools/baseline.sh check <task>             brief unchanged; every commit still reachable
-#   bash .claude/tools/baseline.sh close <task>             the task is accepted; the Stop hook goes back to HEAD
+#   bash .claude/tools/baseline.sh seal  <task>   record the approval and bind it to this session
+#   bash .claude/tools/baseline.sh check <task>   brief unchanged; commits reachable; still active
 #
 # Run it from the repository root (shape A) or the workspace root (shape B; the .workspace marker
 # wins when both exist, as in layout.sh).
 #
-# It writes front matter at the top of working/<task>/brief.md, the file the owner approved:
+# seal writes front matter at the top of working/<task>/brief.md, the file the owner approved:
 #
 #   task, approved_at, one baseline_commit.<checkout> per checkout, brief_sha256 (the digest of
-#   the body below the front matter), pre_existing (a count); closed_at is added by close.
+#   the body below the front matter), pre_existing (a count).
 #
-# The metadata therefore travels with the agreement, one brief, one baseline, no separate state
-# file: `check` is told which task to check, and the Stop hook reads the same keys and names the
-# brief in every finding. The list of files that were already dirty goes to
-# working/<task>/pre-existing.txt beside the brief, because it is a list, not metadata; nothing
-# reads it but the owner and /work.
+# and then writes working/active-tasks/<session id>, one line holding working/<task>/brief.md.
+# Those two writes are one event: this is the agreement, and this session is now carrying it. The
+# Stop hook and the compaction hook both start from the pointer, so neither has to guess which
+# brief belongs to this session. The session id is the host's own, read from CLAUDE_CODE_SESSION_ID,
+# which a Bash tool call inside Claude Code carries; when it is absent the brief is still sealed and
+# the pointer is not written, which is said out loud, and both hooks fall back.
+#
+# A seal does not move. There is no re-seal: a changed agreement is a new brief under a new task
+# folder, sealed on its own, so the original approval stays readable beside it.
+#
+# The files that were already dirty go to working/<task>/pre-existing.txt beside the brief, because
+# they are a list, not metadata; nothing reads it but the owner and /work.
 #
 # The tool exists so that three values are produced the same way every time: the commit from
-# `git rev-parse`, not from memory; the digest over the same bytes at seal and at check; the dirty
-# files captured before the first edit. It signs nothing and locks nothing.
+# `git rev-parse`, the digest over the same bytes at seal and at check, and the dirty files captured
+# before the first edit. It signs nothing and locks nothing.
 
 set -uo pipefail
 
@@ -31,6 +38,7 @@ die()   { echo "baseline.sh: $*" >&2; exit 1; }
 cmd="${1:-}"; task="${2:-}"
 [ -z "$cmd" ] && usage
 [ -z "$task" ] && usage
+printf '%s' "$task" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || die "task name must be one plain path segment: letters, digits, dot, dash, underscore"
 
 root="$PWD"
 repos=()
@@ -49,7 +57,8 @@ dir="$root/working/$task"; brief="$dir/brief.md"
 [ -f "$brief" ] || die "no brief at working/$task/brief.md; write the agreed brief first"
 
 # The seal's own keys. Everything else in an existing front matter is kept as it was.
-SEAL_KEYS='^(task|approved_at|baseline_commit(\.[^:]*)?|brief_sha256|pre_existing|closed_at):'
+SEAL_KEYS='^(task|approved_at|baseline_commit(\.[^:]*)?|brief_sha256|pre_existing):'
+SESSION_RE='^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$'
 
 front_matter() { # the lines between the opening and closing --- , or nothing
   [ "$(head -1 "$1" 2>/dev/null)" = "---" ] || return 0
@@ -68,7 +77,8 @@ digest_body() { local t; t=$(digest_tool); [ -n "$t" ] || return 1; body "$1" | 
 
 fm=$(front_matter "$brief")
 sealed=0; printf '%s\n' "$fm" | grep -Eq '^baseline_commit(\.[^:]*)?:' && sealed=1
-closed=0; printf '%s\n' "$fm" | grep -Eq '^closed_at:' && closed=1
+session="${CLAUDE_CODE_SESSION_ID:-}"
+printf '%s' "$session" | grep -Eq "$SESSION_RE" || session=""
 
 case "$cmd" in
   seal)
@@ -109,6 +119,25 @@ case "$cmd" in
     } > "$brief.tmp" && mv "$brief.tmp" "$brief" && mv "$pre.tmp" "$pre" || die "could not write working/$task/brief.md"
     echo "sealed working/$task/brief.md at $when"
     printf '  %s\n' "${lines[@]}"
+    # bind it to this session, only now that the seal is on disk
+    if [ -n "$session" ]; then
+      ptr="$root/working/active-tasks/$session"
+      if mkdir -p "$root/working/active-tasks" 2>/dev/null &&
+         printf 'working/%s/brief.md\n' "$task" > "$ptr.tmp" 2>/dev/null && mv "$ptr.tmp" "$ptr" 2>/dev/null; then
+        echo "  active task for this session: working/active-tasks/$session"
+      else
+        # The brief is sealed and cannot be sealed again, so this must not be a fatal error with no
+        # way out: say exactly what is missing and how to write it by hand.
+        rm -f "$ptr.tmp" 2>/dev/null
+        echo "  SEALED BUT NOT BOUND: could not write working/active-tasks/$session." >&2
+        echo "  The brief is sealed; the binding is missing, so both hooks will use their fallbacks." >&2
+        echo "  Fix it with one line, then say that you did:" >&2
+        echo "    printf 'working/$task/brief.md\\n' > working/active-tasks/$session" >&2
+      fi
+    else
+      echo "  NOT bound to a session: CLAUDE_CODE_SESSION_ID is absent or malformed, so the compaction and Stop"
+      echo "  hooks will use their fallbacks. Seal from a Bash tool call inside Claude Code to bind it."
+    fi
     if [ "$n" -eq 0 ]; then echo "  working tree clean: nothing pre-existing"
     else echo "  $n pre-existing change(s) recorded in working/$task/pre-existing.txt; they belong to the owner:"; sed 's/^/    /' "$pre"; fi
     ;;
@@ -116,7 +145,6 @@ case "$cmd" in
   check)
     [ "$sealed" = 1 ] || die "working/$task/brief.md carries no baseline; seal it at the owner's yes"
     bad=0
-    [ "$closed" = 1 ] && echo "closed: $(printf '%s\n' "$fm" | grep -E '^closed_at:' | head -1 | cut -d' ' -f2-)"
     want=$(printf '%s\n' "$fm" | grep -E '^brief_sha256:' | head -1 | awk '{print $NF}')
     have=$(digest_body "$brief") || die "neither sha256sum nor shasum on PATH"
     if [ "$want" = "$have" ]; then echo "brief unchanged since approval"
@@ -133,16 +161,10 @@ case "$cmd" in
         echo "$name: baseline ${sha:0:7} does NOT exist in this checkout; the Stop hook compares against HEAD instead"; bad=1
       fi
     done < <(printf '%s\n' "$fm" | grep -E '^baseline_commit\.')
+    if [ -z "$session" ]; then echo "session: CLAUDE_CODE_SESSION_ID is absent here, so the active task cannot be read"
+    elif [ "$(cat "$root/working/active-tasks/$session" 2>/dev/null)" = "working/$task/brief.md" ]; then echo "session: this is the active task for $session"
+    else echo "session: this is NOT the active task for $session; the hooks will use another brief or their fallback"; bad=1; fi
     exit $bad
-    ;;
-
-  close)
-    [ "$sealed" = 1 ] || die "working/$task/brief.md carries no baseline"
-    [ "$closed" = 1 ] && { echo "already closed"; exit 0; }
-    when=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    awk -v w="closed_at: $when" 'NR==1 {print; next} !done && /^---$/ {print w; print; done=1; next} {print}' "$brief" > "$brief.tmp" \
-      && mv "$brief.tmp" "$brief" || die "could not write working/$task/brief.md"
-    echo "closed working/$task/brief.md at $when; the Stop hook compares against HEAD from now on"
     ;;
 
   *) usage ;;

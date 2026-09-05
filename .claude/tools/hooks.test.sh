@@ -78,12 +78,12 @@ done
 echo "verify-on-finish with a task baseline"
 # The two cases a HEAD-only comparison cannot detect, measured 2026-09-05: a weakening that was
 # committed before the turn ended, and a staged rename with an assertion removed. Both must block
-# while the task's brief carries an open seal, and so must a test added during the task and then
-# weakened. Once the brief is closed, or when the recorded commit no longer exists, the hook falls
-# back to HEAD and the committed weakening is invisible again, which is the documented limit, not a
-# bug. A rewritten (rebased) baseline is compared from its merge-base instead. The brief is sealed
-# by the real tool, so the tool is under test too. Every check here fires the hook and reads its
-# exit code or its text; none reads the scripts.
+# while this session carries the sealed task, and so must a test added during the task and then
+# weakened. When the session carries no task, or the recorded commit no longer exists, the hook
+# falls back to HEAD and the committed weakening is invisible again, which is the documented limit,
+# not a bug. A rewritten (rebased) baseline is compared from its merge-base instead. The brief is
+# sealed and bound by the real tool, so the tool is under test too. Every check here fires the hook
+# and reads its exit code or its text; none reads the scripts.
 # A multi-line fixture, so that a rename with one assertion removed is still a rename to git
 # (similarity above 50 percent); a one-line file would show as delete plus add.
 printf 'describe("z", () => {\n  test("one", () => {\n    expect(1).toBe(1);\n  });\n  test("two", () => {\n    expect(2).toBe(2);\n    expect(3).toBe(3);\n  });\n});\n' > "$R/tests/z.test.js"
@@ -91,15 +91,18 @@ git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm fi
 init=$(git -C "$R" rev-parse HEAD)
 trunk=$(git -C "$R" rev-parse --abbrev-ref HEAD)
 gitc() { git -C "$R" -c user.email=t@t -c user.name=t "$@"; }
-seal_() { rm -rf "$R/working/$1"; mkdir -p "$R/working/$1"; printf '# brief\noutcome: tests stay whole\n' > "$R/working/$1/brief.md"; (cd "$R" && bash "$HERE/baseline.sh" seal "$1" >"$T/seal.out" 2>&1); }
+SIDA="sessionAAAAAAAA1"; SIDB="sessionBBBBBBBB2"
+# seal_ <task> [session]: write a brief, seal it, and bind it to that session, through the real tool
+seal_() { rm -rf "$R/working/$1"; mkdir -p "$R/working/$1"; printf '# brief %s\noutcome: tests stay whole\n' "$1" > "$R/working/$1/brief.md"; (cd "$R" && CLAUDE_CODE_SESSION_ID="${2:-$SIDA}" bash "$HERE/baseline.sh" seal "$1" >"$T/seal.out" 2>&1); }
 weaken_commit() { printf 'test("a", () => { expect(1).toBe(1); });\n' > "$R/tests/x.test.js"; gitc commit -qam weaken 2>/dev/null; }
 for shell in $shells; do
   if [ "$shell" = ps1 ]; then cwdv="$(winpath "$R")"; else cwdv="$R"; fi
-  p_stop='{"cwd":"'"$cwdv"'","stop_hook_active":false}'
+  p_stop='{"cwd":"'"$cwdv"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
   git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
   seal_ task-1; sealed=$?
   total=$((total+1)); if [ "$sealed" -eq 0 ] && grep -q "^baseline_commit.repo: $init" "$R/working/task-1/brief.md"; then echo "  ok    $shell: baseline.sh seal recorded the commit in the brief"; else echo "  FAIL  $shell: baseline.sh seal did not record the commit in the brief"; fails=$((fails+1)); cat "$T/seal.out"; fi
-  total=$((total+1)); if [ "$(sed -n '2,$p' "$R/working/task-1/brief.md" | grep -c '^# brief$')" = 1 ]; then echo "  ok    $shell: the approved text survives sealing"; else echo "  FAIL  $shell: sealing damaged the brief body"; fails=$((fails+1)); fi
+  total=$((total+1)); if [ "$(sed -n '2,$p' "$R/working/task-1/brief.md" | grep -c '^# brief task-1$')" = 1 ]; then echo "  ok    $shell: the approved text survives sealing"; else echo "  FAIL  $shell: sealing damaged the brief body"; fails=$((fails+1)); fi
+  total=$((total+1)); if [ "$(cat "$R/working/active-tasks/$SIDA" 2>/dev/null)" = "working/task-1/brief.md" ]; then echo "  ok    $shell: seal bound the brief to this session"; else echo "  FAIL  $shell: seal did not write the active-task pointer"; fails=$((fails+1)); fi
   case_ "$shell: sealed, clean tree allowed"            0 "$(run $shell verify-on-finish "$p_stop")"
   # committed weakening: weaken, commit, then try to finish
   weaken_commit
@@ -118,13 +121,24 @@ for shell in $shells; do
   git -C "$R" add -A; gitc commit -qm add-test 2>/dev/null
   printf 'test("n", () => { expect(1).toBe(1); });\n' > "$R/tests/n.test.js"
   case_ "$shell: test added during the task, then weakened, blocked" 2 "$(run $shell verify-on-finish "$p_stop")"
-  # a second brief, sealed later and closed, must not disable the one still open
-  git -C "$R" reset -q --hard "$init"
-  seal_ task-2; (cd "$R" && bash "$HERE/baseline.sh" close task-2 >/dev/null 2>&1)
+  # Case 3: two sessions, one checkout. Session A sealed before the weakening, session B after it.
+  # A must block and B must not, and neither may read the other's brief.
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-a "$SIDA"
   weaken_commit
-  case_ "$shell: a closed brief does not disable the open one" 2 "$(run $shell verify-on-finish "$p_stop")"
-  total=$((total+1)); if grep -q "working/task-1/brief.md" "$T/err"; then echo "  ok    $shell: the finding names the open brief"; else echo "  FAIL  $shell: the finding does not name the open brief"; fails=$((fails+1)); fi
-  rm -rf "$R/working/task-2"
+  seal_ task-b "$SIDB"
+  p_a='{"cwd":"'"$cwdv"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+  p_b='{"cwd":"'"$cwdv"'","session_id":"'"$SIDB"'","stop_hook_active":false}'
+  case_ "$shell: session A blocks on its own baseline"  2 "$(run $shell verify-on-finish "$p_a")"
+  total=$((total+1)); if grep -q "working/task-a/brief.md" "$T/err" && ! grep -q "task-b" "$T/err"; then echo "  ok    $shell: session A measured only its own task"; else echo "  FAIL  $shell: session A read the wrong brief"; fails=$((fails+1)); fi
+  case_ "$shell: session B allows, sealed after the weakening" 0 "$(run $shell verify-on-finish "$p_b")"
+  # and B is not merely quiet: a weakening after B's own baseline must block B, naming B's brief
+  printf 'test("a", () => {});\n' > "$R/tests/x.test.js"
+  case_ "$shell: session B blocks on its own baseline"  2 "$(run $shell verify-on-finish "$p_b")"
+  total=$((total+1)); if grep -q "working/task-b/brief.md" "$T/err" && ! grep -q "task-a" "$T/err"; then echo "  ok    $shell: session B measured only its own task"; else echo "  FAIL  $shell: session B read the wrong brief"; fails=$((fails+1)); fi
+  git -C "$R" checkout -q -- tests/x.test.js
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-1
   # a rewritten baseline: the task branch is rebased, so the sealed commit is gone; the merge-base is used
   git -C "$R" reset -q --hard "$init"; git -C "$R" checkout -q -b "feat-$shell"
   printf 'f1\n' > "$R/f1.txt"; git -C "$R" add -A; gitc commit -qm f1 2>/dev/null
@@ -135,15 +149,34 @@ for shell in $shells; do
   case_ "$shell: rebased task branch compared from the merge-base" 2 "$(run $shell verify-on-finish "$p_stop")"
   total=$((total+1)); if grep -q "merge-base" "$T/out"; then echo "  ok    $shell: the rewritten baseline is announced"; else echo "  FAIL  $shell: no merge-base note"; fails=$((fails+1)); fi
   git -C "$R" checkout -q "$trunk"; git -C "$R" branch -q -D "feat-$shell"; git -C "$R" reset -q --hard "$init"
-  # closed brief: back to HEAD, so a committed weakening is invisible again (the documented limit)
+  # Case 6: no pointer at all, an older installation. Back to HEAD, so a committed weakening is
+  # invisible again: the documented compatibility limit, not a guess at which brief is active.
   seal_ task-1
   weaken_commit
-  (cd "$R" && bash "$HERE/baseline.sh" close task-1 >/dev/null 2>&1)
-  case_ "$shell: closed brief falls back to HEAD"        0 "$(run $shell verify-on-finish "$p_stop")"
+  rm -rf "$R/working/active-tasks"
+  case_ "$shell: no pointer falls back to HEAD"          0 "$(run $shell verify-on-finish "$p_stop")"
+  # Case 5: the pointer names a task that is gone
+  mkdir -p "$R/working/active-tasks"; printf 'working/gone/brief.md\n' > "$R/working/active-tasks/$SIDA"
+  case_ "$shell: stale pointer falls back to HEAD"       0 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "does not resolve" "$T/out"; then echo "  ok    $shell: the stale pointer is announced"; else echo "  FAIL  $shell: no stale-pointer note"; fails=$((fails+1)); fi
+  # Case 7: the pointer names a relay brief, and then a path outside the project. Both are refused
+  # by shape. Both decoys are SEALED at the baseline, so a hook that followed either would find the
+  # committed weakening and block: only the shape check keeps these at exit 0.
+  mkdir -p "$R/working/relay/task-1" "$T/outside"
+  printf -- '---\nbaseline_commit.repo: %s\n---\n# relay\n' "$init" > "$R/working/relay/task-1/brief.md"
+  printf -- '---\nbaseline_commit.repo: %s\n---\n# outside\n' "$init" > "$T/outside/brief.md"
+  printf 'working/relay/task-1/brief.md\n' > "$R/working/active-tasks/$SIDA"
+  case_ "$shell: a relay path is refused as the active task" 0 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "does not resolve" "$T/out"; then echo "  ok    $shell: the relay path is refused, not merely unusable"; else echo "  FAIL  $shell: the relay path was followed"; fails=$((fails+1)); fi
+  printf '../outside/brief.md\n' > "$R/working/active-tasks/$SIDA"
+  case_ "$shell: a path outside the project is refused"  0 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "does not resolve" "$T/out"; then echo "  ok    $shell: the traversal is refused by shape, not by absence"; else echo "  FAIL  $shell: the traversal was followed"; fails=$((fails+1)); fi
   # a baseline commit that does not exist: HEAD again, with a note
-  awk '/^baseline_commit\.repo: /{print "baseline_commit.repo: 0123456789abcdef0123456789abcdef01234567"; next} /^closed_at:/{next} {print}' "$R/working/task-1/brief.md" > "$T/b.tmp" && mv "$T/b.tmp" "$R/working/task-1/brief.md"
+  printf 'working/task-1/brief.md\n' > "$R/working/active-tasks/$SIDA"
+  awk '/^baseline_commit\.repo: /{print "baseline_commit.repo: 0123456789abcdef0123456789abcdef01234567"; next} {print}' "$R/working/task-1/brief.md" > "$T/b.tmp" && mv "$T/b.tmp" "$R/working/task-1/brief.md"
   case_ "$shell: nonexistent baseline commit falls back to HEAD" 0 "$(run $shell verify-on-finish "$p_stop")"
   total=$((total+1)); if grep -q "does not exist" "$T/out"; then echo "  ok    $shell: the fallback is announced"; else echo "  FAIL  $shell: no fallback note"; fails=$((fails+1)); fi
+  rm -rf "$R/working/relay"
 done
 git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
 
@@ -162,13 +195,67 @@ total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "BRIEF CHANGED" "$T/check.out"
 rm -f "$R/owner-wip.txt"
 
 echo "resume-brief"
-W="$T/ws"; mkdir -p "$W/working/task-1"
+# The brief a session gets back after a compaction is the one it was carrying, read from the
+# pointer baseline.sh wrote at the owner's yes. The bug this replaces: /codex-relay writes
+# working/relay/<task>/brief.md after the agreement, so the newest brief in the tree is routinely
+# the relay's, and the old rule restored it and called it the agreement (measured 2026-09-05).
+# Every case here fires the hook and reads what it printed.
+W="$T/ws"; mkdir -p "$W/working"
+git -C "$W" init -q; git -C "$W" config core.autocrlf false
+printf 'working/\n' > "$W/.gitignore"; printf 'x\n' > "$W/file.txt"
+git -C "$W" add -A && git -C "$W" -c user.email=t@t -c user.name=t commit -qm init 2>/dev/null
 printf '# status\nlast session: hooks tested\n' > "$W/working/status.md"
-printf '# brief\noutcome: the brief survives compaction\n' > "$W/working/task-1/brief.md"
+mk_brief()  { mkdir -p "$W/working/$1"; printf '# brief\nMARKER-%s survives compaction\n' "$1" > "$W/working/$1/brief.md"; }
+seal_w()    { (cd "$W" && CLAUDE_CODE_SESSION_ID="$2" bash "$HERE/baseline.sh" seal "$1" >/dev/null 2>&1); }
+said()      { grep -q "$1" "$T/out"; }
+check_()    { total=$((total+1)); if [ "$2" = 1 ]; then echo "  ok    $1"; else echo "  FAIL  $1"; fails=$((fails+1)); fi; }
+# A relay brief and an unrelated task brief, both dated 2030, so recency would prefer either over
+# the agreed one. The relay brief is the strictly newer of the two, as /codex-relay leaves it, so a
+# fallback that searched one level deeper would pick it and the case would go red.
+mkdir -p "$W/working/relay/task-1"; printf '# relay\nMARKER-relay must never be restored\n' > "$W/working/relay/task-1/brief.md"
+mk_brief task-other
+mkdir -p "$T/outside"; printf '# outside\nMARKER-outside must never be restored\n' > "$T/outside/brief.md"
+touch -t 203001010000 "$W/working/task-other/brief.md"
+touch -t 203001010100 "$W/working/relay/task-1/brief.md"
+mk_brief task-1; mk_brief task-2
+seal_w task-1 "$SIDA"; seal_w task-2 "$SIDB"
 for shell in $shells; do
   if [ "$shell" = ps1 ]; then cwdv="$(winpath "$W")"; else cwdv="$W"; fi
-  run $shell resume-brief '{"cwd":"'"$cwdv"'","source":"compact"}' >/dev/null
-  total=$((total+1)); if grep -q "hooks tested" "$T/out" && grep -q "survives compaction" "$T/out"; then echo "  ok    $shell: status and brief printed after compaction"; else echo "  FAIL  $shell: resume output missing"; fails=$((fails+1)); fi
+  p_a='{"cwd":"'"$cwdv"'","session_id":"'"$SIDA"'","source":"compact"}'
+  p_b='{"cwd":"'"$cwdv"'","session_id":"'"$SIDB"'","source":"compact"}'
+  # Case 1 and 4: the pointer wins over every newer brief, relay or not
+  run $shell resume-brief "$p_a" >/dev/null
+  check_ "$shell: status and the session's own brief printed after compaction" "$( { said 'hooks tested' && said 'MARKER-task-1'; } && echo 1 || echo 0)"
+  check_ "$shell: the relay brief is never restored"                           "$( { said 'MARKER-task-1' && ! said 'MARKER-relay'; } && echo 1 || echo 0)"
+  check_ "$shell: a newer unrelated brief does not win over the pointer"       "$( { said 'MARKER-task-1' && ! said 'MARKER-task-other'; } && echo 1 || echo 0)"
+  check_ "$shell: the restored brief is named as this session's agreement"     "$( said 'carrying' && echo 1 || echo 0)"
+  # Case 2: two sessions, one checkout
+  run $shell resume-brief "$p_b" >/dev/null
+  check_ "$shell: the other session gets its own brief"                        "$( { said 'MARKER-task-2' && ! said 'MARKER-task-1'; } && echo 1 || echo 0)"
+  # Case 8: the same session agrees another task; the new seal replaces the pointer. A fresh task
+  # each pass, because a sealed brief cannot be sealed again.
+  mk_brief "next-$shell"; seal_w "next-$shell" "$SIDA"
+  run $shell resume-brief "$p_a" >/dev/null
+  check_ "$shell: a new agreement moves this session to the new task"          "$( { said "MARKER-next-$shell" && ! said 'MARKER-task-1'; } && echo 1 || echo 0)"
+  # Case 7: a relay path and a path outside the project are both refused
+  printf 'working/relay/task-1/brief.md\n' > "$W/working/active-tasks/$SIDA"
+  run $shell resume-brief "$p_a" >/dev/null
+  check_ "$shell: a relay pointer is refused and announced as a guess"         "$( { ! said 'MARKER-relay' && said 'guess'; } && echo 1 || echo 0)"
+  # the traversal target exists, so only the shape check can refuse it
+  printf '../outside/brief.md\n' > "$W/working/active-tasks/$SIDA"
+  run $shell resume-brief "$p_a" >/dev/null
+  check_ "$shell: a pointer outside the project is refused"                    "$( { said 'MARKER-task-other' && ! said 'MARKER-outside'; } && echo 1 || echo 0)"
+  # Case 5: the pointer names a task that is gone
+  printf 'working/gone/brief.md\n' > "$W/working/active-tasks/$SIDA"
+  run $shell resume-brief "$p_a" >/dev/null
+  check_ "$shell: a stale pointer says so and falls back"                      "$( said 'cannot be restored' && echo 1 || echo 0)"
+  # Case 6: no pointer at all. The newest TASK brief, never the relay, and named as a guess.
+  rm -f "$W/working/active-tasks/$SIDA"
+  run $shell resume-brief "$p_a" >/dev/null
+  check_ "$shell: with no pointer the newest task brief is restored"           "$( said 'MARKER-task-other' && echo 1 || echo 0)"
+  check_ "$shell: the fallback never restores the relay brief"                 "$( { said 'MARKER-task-other' && ! said 'MARKER-relay'; } && echo 1 || echo 0)"
+  check_ "$shell: the fallback is named as a guess"                            "$( said 'guess' && echo 1 || echo 0)"
+  printf 'working/task-1/brief.md\n' > "$W/working/active-tasks/$SIDA"
 done
 
 echo; echo "  $((total-fails)) passed, $fails failed"

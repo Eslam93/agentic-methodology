@@ -7,29 +7,32 @@
 # the marker wins, because a workspace root is itself a checkout); otherwise the repository at cwd
 # when cwd is a git checkout (shape A). If neither, exit 0.
 #
-# What it compares against: the task baseline, when a brief carries one. baseline.sh seal writes
-# baseline_commit.<checkout> into the front matter of working/<task>/brief.md at the owner's yes,
-# and close adds closed_at. This hook reads every brief that carries an open seal and names the
-# brief in each finding, so the comparison is always attributable to one agreed task; it never
-# picks a task by recency. Normally exactly one brief is open.
-#   - a weakening that was committed stays visible until the task closes: a diff against HEAD alone
-#     shows nothing once the weakened test is committed (measured 2026-09-05);
+# What it compares against: the baseline of the task THIS session is carrying. baseline.sh seal
+# writes baseline_commit.<checkout> into the front matter of working/<task>/brief.md at the owner's
+# yes and binds it to the session in working/active-tasks/<session id>. This hook reads the pointer
+# for the session id the host gives it, so two sessions sharing one checkout each measure their own
+# task, and no brief is chosen by recency.
+#   - a weakening that was committed stays visible: a diff against HEAD alone shows nothing once the
+#     weakened test is committed (measured 2026-09-05);
 #   - renames are detected (-M), so a staged git mv plus a removed assertion is compared old path
 #     to new path;
 #   - a test added during the task has no version at the baseline, so it is compared against HEAD,
-#     as before this change.
-# Fallback, never a block: no open seal, or none naming this checkout, and the comparison is
-# against HEAD as before; a sealed commit rewritten by a rebase, amend, or squash is compared from
-# its merge-base with HEAD; a sealed commit that does not exist here falls back to HEAD. Each
-# fallback prints a note to stdout, which Claude Code keeps in its debug log for a Stop hook that
-# exits 0: the note is for a person reading the log, not for the assistant. The hook never writes
-# a baseline.
+#     as it was before the baseline existed.
+# Fallback, never a block, and never a guess at which task is active: no session id, no pointer, a
+# pointer that does not resolve, a brief with no seal, or a seal that does not name this checkout,
+# and the comparison is against HEAD as it was before this mechanism. A sealed commit rewritten by
+# a rebase, amend, or squash is compared from its merge-base with HEAD; one that does not exist here
+# falls back to HEAD. The last four print a note; a session with no id and a session with no pointer
+# are the ordinary case and stay quiet. A note goes to stdout, which Claude Code keeps in its debug
+# log for a Stop hook that exits 0: it is for a person reading the log, not for the assistant.
+# The hook never writes a pointer and never seals anything.
 
 payload=$(cat)
 printf '%s' "$payload" | grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && exit 0
 
 field() { printf '%s' "$payload" | grep -oE "\"$1\"[[:space:]]*:[[:space:]]*\"([^\"\\\\]|\\\\.)*\"" | head -1 | sed 's/^[^:]*:[[:space:]]*"//; s/"$//; s#\\\\#/#g'; }
 cwd=$(field cwd); [ -z "$cwd" ] && cwd="$PWD"
+session=$(field session_id)
 transcript=$(field transcript_path)
 
 # ---- rationalization note (never blocks) -------------------------------------------------
@@ -51,21 +54,39 @@ fi
 [ "${#repos[@]}" -eq 0 ] && exit 0
 command -v git >/dev/null 2>&1 || exit 0
 
-# ---- the briefs that carry an open seal -----------------------------------------------------
-front_matter() { [ "$(head -1 "$1" 2>/dev/null)" = "---" ] || return 0; awk 'NR==1 {next} /^---$/ {exit} {print}' "$1"; }
-seals=(); closedSeen=0
-for b in "$cwd"/working/*/brief.md; do
-  [ -f "$b" ] || continue
-  fm=$(front_matter "$b")
-  printf '%s\n' "$fm" | grep -Eq '^baseline_commit(\.[^:]*)?:' || continue
-  if printf '%s\n' "$fm" | grep -Eq '^closed_at:'; then closedSeen=1; continue; fi
-  seals+=("$b")
-done
-[ "${#seals[@]}" -eq 0 ] && [ "$closedSeen" = 1 ] && echo "note from verify-on-finish: every sealed brief under working/ is closed; comparing against HEAD."
-[ "${#seals[@]}" -gt 1 ] && echo "note from verify-on-finish: ${#seals[@]} briefs carry an open baseline; each is evaluated in turn. Close the finished ones."
+# ---- the brief this session is carrying, if any ----------------------------------------------
+briefFile=""; briefName=""
+if printf '%s' "$session" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$'; then
+  ptr="$cwd/working/active-tasks/$session"
+  if [ -f "$ptr" ]; then
+    rel=$(grep -m1 -vE '^[[:space:]]*$' "$ptr" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    # one task folder, one brief: never a relay path, never an absolute path, never a traversal
+    if printf '%s' "$rel" | grep -Eq '^working/[A-Za-z0-9][A-Za-z0-9._-]*/brief\.md$' && [ -f "$cwd/$rel" ]; then
+      briefFile="$cwd/$rel"; briefName="$rel"
+    else
+      echo "note from verify-on-finish: the active-task pointer for this session does not resolve to a task brief; comparing against HEAD."
+    fi
+  fi
+fi
+# Trailing whitespace on a fence or a key must not change the answer, and it must not change it
+# differently from the PowerShell twin, which trims.
+front_matter() {
+  head -1 "$1" 2>/dev/null | sed 's/[[:space:]]*$//' | grep -qx -- '---' || return 0
+  awk 'NR==1 {next} {t=$0; sub(/[[:space:]]+$/, "", t)} t=="---" {exit} {print}' "$1"
+}
+fm=""
+if [ -n "$briefFile" ]; then
+  fm=$(front_matter "$briefFile")
+  if ! printf '%s\n' "$fm" | grep -Eq '^baseline_commit(\.[^:]*)?:'; then
+    echo "note from verify-on-finish: $briefName carries no baseline; comparing against HEAD."
+    briefFile=""; fm=""
+  fi
+fi
 
 is_test_file() { printf '%s' "$1" | grep -Eiq '(\.test\.|\.spec\.|Tests?\.cs$|(^|/)(tests?|__tests__)/)'; }
-assertions()   { grep -oE 'it[[:space:]]*\(|test[[:space:]]*\(|expect[[:space:]]*\(|\[Fact\]|\[Theory\]|Assert\.|\bShould\b|\bassert[[:space:]]' | wc -l | tr -d ' '; }
+# Word boundaries, so that submit( and protest( are not counted as test( and it(, and so that this
+# counter agrees with the PowerShell twin, which has always had them.
+assertions()   { grep -oE '\bit[[:space:]]*\(|\btest[[:space:]]*\(|\bexpect[[:space:]]*\(|\[Fact\]|\[Theory\]|\bAssert\.|\bShould\b|\bassert[[:space:]]' | wc -l | tr -d ' '; }
 skips()        { grep -oiE '\.skip[[:space:]]*\(|\.only[[:space:]]*\(|\[Skip|@skip|xit[[:space:]]*\(|xdescribe[[:space:]]*\(' | wc -l | tr -d ' '; }
 
 problems=""
@@ -81,11 +102,27 @@ compare() { # repo base label oldpath newpath since -> appends to problems
   SKIPPED  $label  (skip markers $sb -> $sa) since $since"
 }
 
-scan() { # repo base since
-  local repo="$1" base="$2" since="$3" name status code file file2
+for repo in "${repos[@]}"; do
   name=$(basename "$repo")
-  status=$(git -C "$repo" diff --name-status -M "$base" 2>/dev/null) || return 0
-  [ -z "$status" ] && return 0
+  base="HEAD"; since="HEAD"
+  if [ -n "$briefFile" ]; then
+    # index()==1 is a literal, anchored prefix match: a checkout name with a space, a regex
+    # character, or a glob character is safe, and a line that merely mentions the key cannot win
+    sha=$(printf '%s\n' "$fm" | awk -v key="baseline_commit.$name: " \
+      'index($0, key)==1 {v=substr($0, length(key)+1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit}')
+    if [ -z "$sha" ]; then
+      echo "note from verify-on-finish: $briefName has no baseline for $name; comparing against HEAD."
+    elif git -C "$repo" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+      base="$sha"; since="the task baseline ${sha:0:7} ($briefName)"
+    elif mb=$(git -C "$repo" merge-base "$sha" HEAD 2>/dev/null) && [ -n "$mb" ]; then
+      base="$mb"; since="the merge-base ${mb:0:7} of the rewritten task baseline ${sha:0:7} ($briefName)"
+      echo "note from verify-on-finish: the task baseline ${sha:0:7} in $briefName is not an ancestor of HEAD in $name (rewritten by a rebase, amend, or squash); comparing from its merge-base ${mb:0:7}."
+    else
+      echo "note from verify-on-finish: the task baseline ${sha:0:7} in $briefName does not exist in $name; comparing against HEAD instead."
+    fi
+  fi
+  status=$(git -C "$repo" diff --name-status -M "$base" 2>/dev/null) || continue
+  [ -z "$status" ] && continue
   while IFS=$'\t' read -r code file file2; do
     [ -z "$file" ] && continue
     case "$code" in
@@ -102,34 +139,7 @@ scan() { # repo base since
           compare "$repo" "HEAD" "$name/$file (added during the task)" "$file" "$file" "HEAD" ;;
     esac
   done <<< "$status"
-}
-
-if [ "${#seals[@]}" -eq 0 ]; then
-  for repo in "${repos[@]}"; do scan "$repo" "HEAD" "HEAD"; done
-else
-  for b in "${seals[@]}"; do
-    fm=$(front_matter "$b"); briefName="${b#$cwd/}"
-    for repo in "${repos[@]}"; do
-      name=$(basename "$repo")
-      # the value is the last field, so a checkout folder with a space in its name still parses,
-      # and grep -F means a name with a regex character does not become a pattern
-      line=$(printf '%s\n' "$fm" | grep -F "baseline_commit.$name: " | head -1)
-      sha="${line##* }"
-      if [ -z "$line" ]; then
-        echo "note from verify-on-finish: $briefName has no baseline for $name; comparing against HEAD."
-        scan "$repo" "HEAD" "HEAD"
-      elif git -C "$repo" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
-        scan "$repo" "$sha" "the task baseline ${sha:0:7} ($briefName)"
-      elif mb=$(git -C "$repo" merge-base "$sha" HEAD 2>/dev/null) && [ -n "$mb" ]; then
-        echo "note from verify-on-finish: the task baseline ${sha:0:7} in $briefName is not an ancestor of HEAD in $name (rewritten by a rebase, amend, or squash); comparing from its merge-base ${mb:0:7}."
-        scan "$repo" "$mb" "the merge-base ${mb:0:7} of the rewritten task baseline ${sha:0:7} ($briefName)"
-      else
-        echo "note from verify-on-finish: the task baseline ${sha:0:7} in $briefName does not exist in $name; comparing against HEAD instead."
-        scan "$repo" "HEAD" "HEAD"
-      fi
-    done
-  done
-fi
+done
 
 [ -z "$problems" ] && exit 0
 {
@@ -143,6 +153,7 @@ fi
   echo "    explain why the old assertion was wrong, and get their agreement."
   echo
   echo "Do not silence this by reverting the file and re-applying the same edit. A change made"
-  echo "since the task baseline stays visible, committed or not, until the task is closed at hand-back."
+  echo "since the task baseline stays visible, committed or not, for as long as this session"
+  echo "carries this task."
 } >&2
 exit 2

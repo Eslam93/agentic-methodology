@@ -24,23 +24,25 @@
     folders once found nothing and exited 0 on every turn while the status line said it was
     checking (2026-08-31). Say when there is nothing to check.
 
-    What it compares against: the task baseline, when a brief carries one. baseline.sh seal writes
-    baseline_commit.<checkout> into the front matter of working/<task>/brief.md at the owner's yes,
-    and close adds closed_at. This hook reads every brief that carries an open seal and names the
-    brief in each finding, so the comparison is always attributable to one agreed task; it never
-    picks a task by recency. Normally exactly one brief is open.
-      - a weakening that was committed stays visible until the task closes: a diff against HEAD
-        alone shows nothing once the weakened test is committed (measured 2026-09-05);
+    What it compares against: the baseline of the task THIS session is carrying. baseline.sh seal
+    writes baseline_commit.<checkout> into the front matter of working/<task>/brief.md at the
+    owner's yes and binds it to the session in working/active-tasks/<session id>. This hook reads
+    the pointer for the session id the host gives it, so two sessions sharing one checkout each
+    measure their own task, and no brief is chosen by recency.
+      - a weakening that was committed stays visible: a diff against HEAD alone shows nothing once
+        the weakened test is committed (measured 2026-09-05);
       - renames are detected (-M), so a staged git mv plus a removed assertion is compared old path
         to new path;
       - a test added during the task has no version at the baseline, so it is compared against
-        HEAD, as before this change.
-    Fallback, never a block: no open seal, or none naming this checkout, and the comparison is
-    against HEAD as before; a sealed commit rewritten by a rebase, amend, or squash is compared
-    from its merge-base with HEAD; a sealed commit that does not exist here falls back to HEAD.
-    Each fallback prints a note to stdout, which Claude Code keeps in its debug log for a Stop hook
-    that exits 0: the note is for a person reading the log, not for the assistant. The hook never
-    writes a baseline.
+        HEAD, as it was before the baseline existed.
+    Fallback, never a block, and never a guess at which task is active: no session id, no pointer, a
+    pointer that does not resolve, a brief with no seal, or a seal that does not name this checkout,
+    and the comparison is against HEAD as it was before this mechanism. A sealed commit rewritten by
+    a rebase, amend, or squash is compared from its merge-base with HEAD; one that does not exist
+    here falls back to HEAD. The last four print a note; a session with no id and a session with no
+    pointer are the ordinary case and stay quiet. A note goes to stdout, which Claude Code keeps in
+    its debug log for a Stop hook that exits 0: it is for a person reading the log, not for the
+    assistant. The hook never writes a pointer and never seals anything.
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -52,6 +54,7 @@ try { $payload = $raw | ConvertFrom-Json } catch { exit 0 }
 if ($payload.stop_hook_active -eq $true) { exit 0 }
 
 $cwd = if ($payload.cwd) { $payload.cwd } else { (Get-Location).Path }
+$session = [string]$payload.session_id
 
 # ---- rationalization note (never blocks) ------------------------------------------------
 $transcript = $payload.transcript_path
@@ -108,35 +111,44 @@ function Test-Git {
     catch { return $false } finally { $ErrorActionPreference = $prev }
 }
 
-# ---- the briefs that carry an open seal -----------------------------------------------------
-function Get-FrontMatter {
-    param([string]$Path)
-    $lines = @(Get-Content $Path -ErrorAction SilentlyContinue)
-    if ($lines.Count -eq 0 -or $lines[0].Trim() -ne '---') { return @() }
-    $fm = @()
-    for ($i = 1; $i -lt $lines.Count; $i++) {
-        if ($lines[$i].Trim() -eq '---') { return $fm }
-        $fm += $lines[$i]
+# ---- the brief this session is carrying, if any ----------------------------------------------
+$briefFile = $null; $briefName = ''; $fm = @()
+if ($session -cmatch '^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$') {
+    $ptr = Join-Path (Join-Path (Join-Path $cwd 'working') 'active-tasks') $session
+    if (Test-Path $ptr -PathType Leaf) {
+        $rel = (Get-Content $ptr -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1)
+        if ($rel) { $rel = $rel.Trim() }
+        # one task folder, one brief: never a relay path, never an absolute path, never a traversal
+        if ($rel -cmatch '^working/[A-Za-z0-9][A-Za-z0-9._-]*/brief\.md$' -and (Test-Path (Join-Path $cwd $rel) -PathType Leaf)) {
+            $briefFile = Join-Path $cwd $rel; $briefName = $rel
+        } else {
+            Write-Output "note from verify-on-finish: the active-task pointer for this session does not resolve to a task brief; comparing against HEAD."
+        }
     }
-    return @()   # unterminated front matter: treat the file as unsealed
+}
+if ($briefFile) {
+    $lines = @(Get-Content $briefFile -ErrorAction SilentlyContinue)
+    if ($lines.Count -gt 0 -and $lines[0].Trim() -eq '---') {
+        for ($i = 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].Trim() -eq '---') { break }
+            $fm += $lines[$i]
+        }
+    }
+    if (-not ($fm | Where-Object { $_ -cmatch '^baseline_commit(\.[^:]*)?:' })) {
+        Write-Output "note from verify-on-finish: $briefName carries no baseline; comparing against HEAD."
+        $briefFile = $null; $fm = @()
+    }
 }
 
-$seals = @(); $closedSeen = $false
-$workingDir = Join-Path $cwd 'working'
-if (Test-Path $workingDir) {
-    foreach ($b in Get-ChildItem -Path (Join-Path (Join-Path $workingDir '*') 'brief.md') -File -ErrorAction SilentlyContinue) {
-        $fm = Get-FrontMatter $b.FullName
-        if (-not ($fm | Where-Object { $_ -match '^baseline_commit(\.[^:]*)?:' })) { continue }
-        if ($fm | Where-Object { $_ -match '^closed_at:' }) { $closedSeen = $true; continue }
-        $seals += ,@{ Path = $b.FullName; Fm = $fm }
-    }
+function Get-Short {
+    param([string]$Value)
+    if ($Value.Length -ge 7) { return $Value.Substring(0, 7) }
+    return $Value
 }
-if ($seals.Count -eq 0 -and $closedSeen) { Write-Output "note from verify-on-finish: every sealed brief under working/ is closed; comparing against HEAD." }
-if ($seals.Count -gt 1) { Write-Output "note from verify-on-finish: $($seals.Count) briefs carry an open baseline; each is evaluated in turn. Close the finished ones." }
 
 function Test-IsTestFile {
     param([string]$Path)
-    return ($Path -match '(?i)(\.test\.|\.spec\.|Tests?\.cs$|[\\/](tests?|__tests__)[\\/])')
+    return ($Path -match '(?i)(\.test\.|\.spec\.|Tests?\.cs$|(^|[\\/])(tests?|__tests__)[\\/])')
 }
 
 # Cheap proxy for how much a test is asserting.
@@ -155,21 +167,42 @@ function Get-SkipCount {
 }
 
 $problems = @()
-function Invoke-Scan {
-    param([string]$Repo, [string]$Base, [string]$Since)
-    $name = Split-Path $Repo -Leaf
-    $status = Invoke-Git $Repo @('diff', '--name-status', '-M', $Base)
-    if (-not $status) { return }
+foreach ($repo in $repos) {
+    $name = Split-Path $repo -Leaf
+    $base = 'HEAD'; $since = 'HEAD'
+    if ($briefFile) {
+        # the value is the last field, so a checkout folder with a space in its name still parses,
+        # and StartsWith means a name with a regex character is not a pattern
+        $key = "baseline_commit.$name" + ': '
+        $hit = $fm | Where-Object { $_.StartsWith($key, [System.StringComparison]::Ordinal) } | Select-Object -First 1
+        $sha = if ($hit) { ($hit.Trim() -split '\s+')[-1] } else { $null }
+        if (-not $sha) {
+            Write-Output "note from verify-on-finish: $briefName has no baseline for $name; comparing against HEAD."
+        } elseif (Test-Git $repo @('merge-base', '--is-ancestor', $sha, 'HEAD')) {
+            $base = $sha; $since = "the task baseline $(Get-Short $sha) ($briefName)"
+        } else {
+            $mb = Invoke-Git $repo @('merge-base', $sha, 'HEAD')
+            $mb = if ($mb) { (@($mb) -join '').Trim() } else { '' }
+            if ($mb) {
+                $base = $mb; $since = "the merge-base $(Get-Short $mb) of the rewritten task baseline $(Get-Short $sha) ($briefName)"
+                Write-Output "note from verify-on-finish: the task baseline $(Get-Short $sha) in $briefName is not an ancestor of HEAD in $name (rewritten by a rebase, amend, or squash); comparing from its merge-base $(Get-Short $mb)."
+            } else {
+                Write-Output "note from verify-on-finish: the task baseline $(Get-Short $sha) in $briefName does not exist in $name; comparing against HEAD instead."
+            }
+        }
+    }
+    $status = Invoke-Git $repo @('diff', '--name-status', '-M', $base)
+    if (-not $status) { continue }
     foreach ($line in $status) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
         $parts = $line -split "`t", 3
         if ($parts.Count -lt 2) { continue }
         $code = $parts[0].Trim(); $file = $parts[1].Trim()
         $file2 = if ($parts.Count -ge 3) { $parts[2].Trim() } else { $file }
-        $label = $null; $old = $file; $new = $file; $cmpBase = $Base; $cmpSince = $Since
+        $label = $null; $old = $file; $new = $file; $cmpBase = $base; $cmpSince = $since
         if ($code -like 'D*') {
             if (-not (Test-IsTestFile $file)) { continue }
-            $script:problems += "DELETED  $name/$file since $Since"; continue
+            $problems += "DELETED  $name/$file since $since"; continue
         } elseif ($code -like 'M*') {
             if (-not (Test-IsTestFile $file)) { continue }
             $label = "$name/$file"
@@ -179,50 +212,18 @@ function Invoke-Scan {
         } elseif ($code -like 'A*') {
             # added during the task: its only earlier version is the one committed since the baseline
             if (-not (Test-IsTestFile $file)) { continue }
-            if (-not (Test-Git $Repo @('cat-file', '-e', "HEAD:$file"))) { continue }
+            if (-not (Test-Git $repo @('cat-file', '-e', "HEAD:$file"))) { continue }
             $label = "$name/$file (added during the task)"; $cmpBase = 'HEAD'; $cmpSince = 'HEAD'
         } else { continue }
-        $before = (Invoke-Git $Repo @('show', "${cmpBase}:$old")) -join "`n"
-        $afterPath = Join-Path $Repo $new
+        $before = (Invoke-Git $repo @('show', "${cmpBase}:$old")) -join "`n"
+        $afterPath = Join-Path $repo $new
         $after = if (Test-Path $afterPath) { Get-Content $afterPath -Raw -ErrorAction SilentlyContinue } else { '' }
         $b = Get-AssertionCount $before
         $a = Get-AssertionCount $after
-        if ($a -lt $b) { $script:problems += "WEAKENED $label  (assertions $b -> $a) since $cmpSince" }
+        if ($a -lt $b) { $problems += "WEAKENED $label  (assertions $b -> $a) since $cmpSince" }
         $skipsBefore = Get-SkipCount $before
         $skipsAfter  = Get-SkipCount $after
-        if ($skipsAfter -gt $skipsBefore) { $script:problems += "SKIPPED  $label  (skip markers $skipsBefore -> $skipsAfter) since $cmpSince" }
-    }
-}
-
-if ($seals.Count -eq 0) {
-    foreach ($repo in $repos) { Invoke-Scan $repo 'HEAD' 'HEAD' }
-} else {
-    foreach ($seal in $seals) {
-        $briefName = $seal.Path.Substring($cwd.Length).TrimStart('\', '/') -replace '\\', '/'
-        foreach ($repo in $repos) {
-            $name = Split-Path $repo -Leaf
-            # the value is the last field, so a checkout folder with a space in its name still
-            # parses, and StartsWith means a name with a regex character is not a pattern
-            $key = "baseline_commit.$name" + ': '
-            $hit = $seal.Fm | Where-Object { $_.StartsWith($key) } | Select-Object -First 1
-            $sha = if ($hit) { ($hit.Trim() -split '\s+')[-1] } else { $null }
-            if (-not $sha) {
-                Write-Output "note from verify-on-finish: $briefName has no baseline for $name; comparing against HEAD."
-                Invoke-Scan $repo 'HEAD' 'HEAD'
-            } elseif (Test-Git $repo @('merge-base', '--is-ancestor', $sha, 'HEAD')) {
-                Invoke-Scan $repo $sha "the task baseline $($sha.Substring(0, 7)) ($briefName)"
-            } else {
-                $mb = Invoke-Git $repo @('merge-base', $sha, 'HEAD')
-                $mb = if ($mb) { (@($mb) -join '').Trim() } else { '' }
-                if ($mb) {
-                    Write-Output "note from verify-on-finish: the task baseline $($sha.Substring(0, 7)) in $briefName is not an ancestor of HEAD in $name (rewritten by a rebase, amend, or squash); comparing from its merge-base $($mb.Substring(0, 7))."
-                    Invoke-Scan $repo $mb "the merge-base $($mb.Substring(0, 7)) of the rewritten task baseline $($sha.Substring(0, 7)) ($briefName)"
-                } else {
-                    Write-Output "note from verify-on-finish: the task baseline $($sha.Substring(0, 7)) in $briefName does not exist in $name; comparing against HEAD instead."
-                    Invoke-Scan $repo 'HEAD' 'HEAD'
-                }
-            }
-        }
+        if ($skipsAfter -gt $skipsBefore) { $problems += "SKIPPED  $label  (skip markers $skipsBefore -> $skipsAfter) since $cmpSince" }
     }
 }
 
@@ -240,6 +241,7 @@ $msg += '  - if the test genuinely encoded wrong behaviour, say so explicitly to
 $msg += '    explain why the old assertion was wrong, and get their agreement.'
 $msg += ''
 $msg += 'Do not silence this by reverting the file and re-applying the same edit. A change made'
-$msg += 'since the task baseline stays visible, committed or not, until the task is closed at hand-back.'
+$msg += 'since the task baseline stays visible, committed or not, for as long as this session'
+$msg += 'carries this task.'
 [Console]::Error.WriteLine(($msg -join "`n"))
 exit 2

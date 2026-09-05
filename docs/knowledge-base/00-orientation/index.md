@@ -41,6 +41,7 @@ reverify_when: Every time a page is added, superseded, or removed
 | `_investigations/2026-09-05-v2-rewrite/acceptance.md` | how each of the seventeen acceptance tests was run and what it returned; all seventeen passed on 2026-09-05 |
 | `_investigations/2026-09-05-benchmark/methodology.md` | the commands, commits, and agent runs behind every number on the benchmark pages, and what the benchmark left unverified |
 | `_investigations/2026-09-05-task-baseline/methodology.md` | what the sealed task baseline records, what the Stop hook mechanically detects since it, what `/work` only instructs, and the runs that proved the two cases a `HEAD` comparison cannot detect |
+| `_investigations/2026-09-05-active-task/methodology.md` | how a Claude session says which task it is carrying, where the session id comes from, and the runs that prove a relay brief can no longer be restored as the agreement |
 | `99-pending.md` | everything found and not acted on |
 
 ## What is empty, and deliberately

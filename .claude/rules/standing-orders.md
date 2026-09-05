@@ -63,10 +63,12 @@ the task belong to the owner.
 Everything in this folder is advice except four hooks. `guard-secrets` blocks a secret **value**
 written through Edit or Write. `guard-commands` blocks the destructive commands on its list, which
 starts empty and grows from incidents. `verify-on-finish` blocks a turn that weakened, skipped, or
-deleted a test since the task baseline, or since `HEAD` when none is sealed. `resume-brief`
-re-reads the task brief after a compaction. No hook sees a browser,
-an MCP call, chat, or a shared folder. **Rules and hooks load at session start: restart the session
-after changing either.**
+deleted a test since the baseline of the task this session carries. `resume-brief` re-reads that
+same task's brief after a compaction. Both read `working/active-tasks/<session id>`, which
+`baseline.sh seal` writes at the owner's yes; with no task bound, the first compares against `HEAD`
+and the second restores the newest task brief and calls it a guess. None of these four hooks sees a
+browser, an MCP call, chat, or a shared folder. **Rules and hooks load at session start: restart
+the session after changing either.**
 
 ## Where things live
 

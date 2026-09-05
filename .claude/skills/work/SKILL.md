@@ -80,11 +80,14 @@ restate only what changed. Write the agreed summary and checklist to `working/<t
 after a compaction the `resume-brief` hook reads it back, so the build continues from the agreement
 rather than from a summary. Then seal it: `bash .claude/tools/baseline.sh seal <task>` writes the
 approval time, the digest of the agreed text, and the commit every checkout is at into that brief's
-own front matter, and lists the files already dirty in `working/<task>/pre-existing.txt`. That
-commit is the task's baseline: the Stop hook diffs tests against it, and it does not move when you
-commit. A seal cannot be moved: if the owner changes the agreement, write the new brief under a new
-task folder and seal that, so the original approval stays readable beside it. A real fork decided
-here goes to `decisions.md` through `/record`.
+own front matter, lists the files already dirty in `working/<task>/pre-existing.txt`, and binds that
+brief to this session in `working/active-tasks/<session id>`. Those are one event: this is the
+agreement, and this session is now carrying it. From then on the compaction hook restores that exact
+brief and the Stop hook measures tests against that commit, neither of them guessing from what is
+newest. Seal from a Bash tool call, which is where the session id is; if it says the brief was not
+bound, say so rather than continuing as though it was. A seal cannot be moved: if the owner changes
+the agreement, write the new brief under a new task folder and seal that, which also moves this
+session to it. A real fork decided here goes to `decisions.md` through `/record`.
 
 ## 4 · Route: what the yes decided
 
@@ -128,9 +131,10 @@ a finding is evidence-only.
 
 ## 7 · Hand back, in this order
 
-a. `bash .claude/tools/baseline.sh check <task>`: a brief changed since approval is a finding of its
-   own, reported before the checklist. Then `git diff --name-only` before reading any content. Did
-   this change something it should not have?
+a. `bash .claude/tools/baseline.sh check <task>`: a brief changed since approval, or a task that is
+   no longer the one this session carries, is a finding of its own, reported before the checklist.
+   Then `git diff --name-only` before reading any content. Did this change something it should not
+   have?
 b. Read the test diff before the code diff, then the whole diff for things nobody asked for.
 c. Report against the checklist, line by line: built, ran and did the thing, or not verified.
    Evidence, not claims: the command and what it returned.
@@ -138,8 +142,11 @@ d. The direction delta, one line: what shipped, in product terms, versus what wa
 e. What to try themselves: open this, do this, expect that. The test guide carries it.
 f. `/pr` when they say so. The test guide becomes the "How to test" section.
 g. `/board` proposes the tracker update and stops. Never a tracker write in the same turn.
-h. When the owner accepts, `bash .claude/tools/baseline.sh close <task>`: from then on the Stop hook
-   compares against `HEAD` again. Name any pre-existing file the task left untouched.
+h. Name any pre-existing file the task left untouched. The baseline stays bound to this session
+   until the owner agrees the next task, which seals its own brief and moves the binding; nothing
+   retires a baseline early, so a weakening committed during the task stays visible to the end of
+   the session. A later session is a different session with no pointer, so it starts from `HEAD`
+   again: work that must stay guarded is finished, reviewed, and handed back in one session.
 i. Anything learned goes through `/record`, with evidence and what was not checked. Open threads go
    to `99-pending.md`, never to `working/`. Then `/handoff` if the session is ending.
 

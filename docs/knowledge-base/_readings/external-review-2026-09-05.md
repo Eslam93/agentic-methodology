@@ -101,8 +101,9 @@ numbers do not.
 ## What the check found that the reviewer did not
 
 Each was found while re-deriving the claims above. Since then: R1, R6, R16, and findings 1 and 8
-below were closed on 2026-09-05 by decision D-17, the sealed task baseline; the rows and the
-findings describe the tree at `bac12dc`. The rest are in `99-pending.md`.
+below were closed on 2026-09-05 by decision D-17, the sealed task baseline, and R2 with finding 2 by
+D-18, the session-scoped active-task pointer; the rows and the findings describe the tree at
+`bac12dc`. The rest are in `99-pending.md`.
 
 1. **A staged rename that weakens a test is invisible to the Stop hook.** `git diff --name-status
    HEAD` prints `R091 old new` for a renamed and shrunk test; `verify-on-finish.sh:47-59` and

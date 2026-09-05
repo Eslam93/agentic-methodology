@@ -1,11 +1,23 @@
 #!/usr/bin/env bash
 # SessionStart hook, matcher "compact": after a compaction, put the disposable state back in front
 # of the assistant so the build continues from the agreed brief rather than from a summary.
-# Prints working/status.md, then the newest working/*/brief.md, capped. Exit 0 always.
+# Prints working/status.md, then the task brief, capped. Exit 0 always.
+#
+# Which brief: the one this session is carrying. baseline.sh seal writes
+# working/active-tasks/<session id> at the owner's yes, holding one line, working/<task>/brief.md,
+# and this hook reads the pointer for the session id the host gives it. That is the whole rule: no
+# recency, no scanning. It matters because /codex-relay writes working/relay/<task>/brief.md after
+# the agreement, so the newest brief in the tree is routinely not the agreed one, and this hook used
+# to restore the relay brief and call it the agreement (measured 2026-09-05).
+#
+# Fallback, when there is no valid pointer for this session, an older installation or a task agreed
+# before the pointer existed: the newest working/<task>/brief.md, one level deep only, so a relay
+# brief can never win. It is announced as a guess, because it is one.
 
 payload=$(cat)
-cwd=$(printf '%s' "$payload" | grep -oE '"cwd"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' | head -1 | sed 's/^[^:]*:[[:space:]]*"//; s/"$//; s#\\\\#/#g')
-[ -z "$cwd" ] && cwd="$PWD"
+field() { printf '%s' "$payload" | grep -oE "\"$1\"[[:space:]]*:[[:space:]]*\"([^\"\\\\]|\\\\.)*\"" | head -1 | sed 's/^[^:]*:[[:space:]]*"//; s/"$//; s#\\\\#/#g'; }
+cwd=$(field cwd); [ -z "$cwd" ] && cwd="$PWD"
+session=$(field session_id)
 working="$cwd/working"
 [ -d "$working" ] || exit 0
 
@@ -14,13 +26,46 @@ if [ -f "$working/status.md" ]; then
   head -n 60 "$working/status.md"
 fi
 
-brief=$(find "$working" -mindepth 2 -maxdepth 3 -name brief.md -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
-if [ -z "$brief" ]; then
-  brief=$(ls -t "$working"/*/brief.md 2>/dev/null | head -1)
+# ---- the brief this session is carrying ------------------------------------------------------
+brief=""; how="none"
+if printf '%s' "$session" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$'; then
+  ptr="$working/active-tasks/$session"
+  if [ -f "$ptr" ]; then
+    how="stale"
+    rel=$(grep -m1 -vE '^[[:space:]]*$' "$ptr" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    # one task folder, one brief: never a relay path, never an absolute path, never a traversal
+    if printf '%s' "$rel" | grep -Eq '^working/[A-Za-z0-9][A-Za-z0-9._-]*/brief\.md$' && [ -f "$cwd/$rel" ]; then
+      brief="$cwd/$rel"; how="active"
+    fi
+  fi
 fi
-if [ -n "$brief" ] && [ -f "$brief" ]; then
+# The stale case is said out loud whether or not anything can replace it: a session that quietly
+# lost its agreement across a compaction is the failure this hook exists to prevent.
+if [ "$how" = "stale" ]; then
   echo
-  echo "The task brief in flight, ${brief#$cwd/} (agreed with the owner; do not re-plan it):"
-  head -n 80 "$brief"
+  echo "This session's active-task pointer does not name a readable task brief, so the agreement it"
+  echo "recorded cannot be restored. Ask the owner what this session is working on."
 fi
+if [ -z "$brief" ]; then
+  for f in "$working"/*/brief.md; do
+    [ -f "$f" ] || continue
+    if [ -z "$brief" ] || [ "$f" -nt "$brief" ]; then brief="$f"; fi
+  done
+  [ -n "$brief" ] && [ "$how" != "stale" ] && how="fallback"
+  [ -n "$brief" ] && [ "$how" = "stale" ] && how="stale-fallback"
+fi
+
+[ -z "$brief" ] && exit 0
+rel="${brief#$cwd/}"
+echo
+case "$how" in
+  active)
+    echo "The agreed task brief this session is carrying, $rel (bound to this session when the owner said yes; do not re-plan it):" ;;
+  stale-fallback)
+    echo "The newest task brief under working/ is $rel. Treat it as a guess, not as this session's agreement:" ;;
+  *)
+    echo "No task is bound to this session. The newest task brief under working/ is $rel. Treat it as a guess,"
+    echo "not as this session's agreement; ask the owner before building from it:" ;;
+esac
+head -n 80 "$brief"
 exit 0
