@@ -19,7 +19,7 @@ Everything not in the repository goes into it verbatim.
 | Mode | What is sent | Rounds |
 |---|---|---|
 | `plan` | the brief from `/work`: requirement verbatim, current state, the design, the outcome checklist | up to `max_rounds` (default 5) |
-| `code` | the diff since the baseline, what it should do, how to verify. **Cold first**, context second | cold pass, then one context pass |
+| `code` | the diff since the last relay, what it should do, how to verify. **Cold first**, context second | cold pass, then one context pass |
 | `deep` | the whole repository, with `deep-review-prompt.md` beside this file | one |
 
 Flags compose in any order: `new` starts a fresh thread, `session=<id>` uses one, the rest of the
@@ -68,16 +68,17 @@ codex exec --sandbox read-only - < working/relay/<task>/brief.md                
   reads, recomputes, and advises. It does not edit the tree.
 - `--skip-git-repo-check` only when the directory is not a git repository.
 - After a fresh thread starts, save its id (`grep -i 'session id:'`) into `codex-relay.json`. After
-  any code relay, write the baseline `{ branch, sha, time }` into `codex-relay.state.json`, keyed by
-  branch, so parallel branches keep separate baselines. If the saved sha is unreachable after a
-  rebase, fall back to the merge-base and say so.
+  any code relay, write the relay point `{ branch, sha, time }` into `codex-relay.state.json`, keyed
+  by branch, so parallel branches keep separate relay points. If the saved sha is unreachable after
+  a rebase, fall back to the merge-base and say so.
 
 ## The delta for code mode
 
-Review only what changed since the baseline: the last relay on this branch, else the last
-checkpoint commit, else the session start. `git diff --stat <sha>..HEAD`, `git status --porcelain`,
-`git log --oneline <sha>..HEAD`. State the baseline you used. An empty delta is a question for the
-owner, not a review.
+Review only what changed since the relay point: the last relay on this branch, else the task
+baseline commit in `working/<task>/baseline`, else the session start. `git diff --stat <sha>..HEAD`,
+`git status --porcelain`, `git log --oneline <sha>..HEAD`. State the point you used; "the task
+baseline" always means the sealed commit, never the relay point. An empty delta is a question for
+the owner, not a review.
 
 ## Reconcile
 

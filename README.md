@@ -38,7 +38,7 @@ volatile status.** That boundary is the design.
 
 ## What is in the box
 
-Four rules, ten skills, four hooks, five tools. Install is a copy.
+Four rules, ten skills, four hooks, six tools. Install is a copy.
 
 | Part | What it does |
 |---|---|
@@ -52,7 +52,8 @@ Four rules, ten skills, four hooks, five tools. Install is a copy.
 | **`/codex-relay`** | an optional second model, read-only, briefed in full, answering verdict first, with pushback allowed only with evidence |
 | **`/test-guide`** `/pr` `/board` | plain-English test steps that double as the pull request's "How to test"; a well-formed pull request; a tracker update that proposes and stops |
 | **`/explain`** `/summarize` | the real version at a named audience, with a verify mode that re-checks a claim against the current tree; and the short version, without losing the caveats |
-| **four hooks** | a secret value is blocked before it is written; a weakened, skipped, or deleted test blocks the turn; a destructive-command list that starts empty and grows from incidents; the task brief re-read after a compaction |
+| **four hooks** | a secret value is blocked before it is written; a test weakened, skipped, or deleted blocks the turn, since the task's sealed baseline when one is sealed (so a committed weakening still counts) and since `HEAD` otherwise; a destructive-command list that starts empty and grows from incidents; the task brief re-read after a compaction |
+| **`baseline.sh`** | seals the task's starting point into the agreed brief at the owner's yes: the approval time, the digest of the agreed text, and the commit of every checkout, beside a list of the files that were already dirty, which `/work` tells task commits to leave alone |
 | **`verify.sh`** | the checks that exist here, a canary that must fail, and a hook test suite that proves the guards can go red |
 
 Every hook ships in PowerShell and in Bash. Windows was the first platform, not an afterthought.
@@ -172,7 +173,7 @@ install it, write your own limits down the same way.
   rules/            standing-orders · writing · working-here · knowledge-base · methodology (this repo's own)
   skills/           orient · work · codex-relay · test-guide · pr · board · record · handoff · explain · summarize
   hooks/            guard-secrets · guard-commands · verify-on-finish · resume-brief, each .ps1 and .sh
-  tools/            layout.sh · verify.sh · hooks.test.sh · install.sh · install.ps1
+  tools/            layout.sh · verify.sh · hooks.test.sh · baseline.sh · install.sh · install.ps1
   settings.json     the hook wiring
 docs/knowledge-base/  this repository's knowledge base
 working/            disposable; only its README is committed

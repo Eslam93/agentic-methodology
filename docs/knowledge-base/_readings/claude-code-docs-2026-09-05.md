@@ -31,6 +31,12 @@ reverify_when: On a Claude Code version change, and before wiring any new hook e
   `99-pending.md`.
 - **Every hook receives `session_id`** in its input JSON. An active-task pointer keyed by session
   is therefore possible from inside a hook.
+- **A Stop hook's stdout on exit 0 never reaches the assistant.** Quoted: "For most events, Claude
+  Code writes stdout to the debug log and doesn't show it in the transcript. The exceptions are
+  `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart`, and `PostModelSwitch`", and "Stderr from
+  a hook that exits 0 goes to the debug log only, never the transcript, and Claude never sees it."
+  So the notes `verify-on-finish` prints on exit 0 (a rationalization phrase, a fallback to `HEAD`)
+  are for a person reading the debug log; only an exit 2 with stderr reaches the model.
 - **`once: true`** removes a hook after its first successful run, honoured only for hooks declared
   in skill front matter; a skill's hooks run for the rest of the session once the skill is invoked.
 - The hooks page does not name `MultiEdit` or `NotebookEdit` or their input fields. Whether the

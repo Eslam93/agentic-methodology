@@ -56,6 +56,8 @@ done
 echo "verify-on-finish"
 R="$T/repo"; mkdir -p "$R/tests"
 git -C "$R" init -q
+git -C "$R" config core.autocrlf false
+printf 'working/\n' > "$R/.gitignore"    # as an installed repository has it; the seal must never be staged
 printf 'test("a", () => { expect(1).toBe(1); expect(2).toBe(2); });\n' > "$R/tests/x.test.js"
 printf 'skip the tests for now, this is a pre-existing bug\n' > "$T/transcript.jsonl"
 git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm init 2>/dev/null
@@ -72,6 +74,92 @@ for shell in $shells; do
   run $shell verify-on-finish '{"cwd":"'"$cwdv"'","stop_hook_active":false,"transcript_path":"'"$tp"'"}' >/dev/null
   total=$((total+1)); if grep -q rationalization "$T/out"; then echo "  ok    $shell: rationalization note printed, non-blocking"; else echo "  FAIL  $shell: no rationalization note"; fails=$((fails+1)); fi
 done
+
+echo "verify-on-finish with a task baseline"
+# The two cases a HEAD-only comparison cannot detect, measured 2026-09-05: a weakening that was
+# committed before the turn ended, and a staged rename with an assertion removed. Both must block
+# while the task's brief carries an open seal, and so must a test added during the task and then
+# weakened. Once the brief is closed, or when the recorded commit no longer exists, the hook falls
+# back to HEAD and the committed weakening is invisible again, which is the documented limit, not a
+# bug. A rewritten (rebased) baseline is compared from its merge-base instead. The brief is sealed
+# by the real tool, so the tool is under test too. Every check here fires the hook and reads its
+# exit code or its text; none reads the scripts.
+# A multi-line fixture, so that a rename with one assertion removed is still a rename to git
+# (similarity above 50 percent); a one-line file would show as delete plus add.
+printf 'describe("z", () => {\n  test("one", () => {\n    expect(1).toBe(1);\n  });\n  test("two", () => {\n    expect(2).toBe(2);\n    expect(3).toBe(3);\n  });\n});\n' > "$R/tests/z.test.js"
+git -C "$R" add -A && git -C "$R" -c user.email=t@t -c user.name=t commit -qm fixture 2>/dev/null
+init=$(git -C "$R" rev-parse HEAD)
+trunk=$(git -C "$R" rev-parse --abbrev-ref HEAD)
+gitc() { git -C "$R" -c user.email=t@t -c user.name=t "$@"; }
+seal_() { rm -rf "$R/working/$1"; mkdir -p "$R/working/$1"; printf '# brief\noutcome: tests stay whole\n' > "$R/working/$1/brief.md"; (cd "$R" && bash "$HERE/baseline.sh" seal "$1" >"$T/seal.out" 2>&1); }
+weaken_commit() { printf 'test("a", () => { expect(1).toBe(1); });\n' > "$R/tests/x.test.js"; gitc commit -qam weaken 2>/dev/null; }
+for shell in $shells; do
+  if [ "$shell" = ps1 ]; then cwdv="$(winpath "$R")"; else cwdv="$R"; fi
+  p_stop='{"cwd":"'"$cwdv"'","stop_hook_active":false}'
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-1; sealed=$?
+  total=$((total+1)); if [ "$sealed" -eq 0 ] && grep -q "^baseline_commit.repo: $init" "$R/working/task-1/brief.md"; then echo "  ok    $shell: baseline.sh seal recorded the commit in the brief"; else echo "  FAIL  $shell: baseline.sh seal did not record the commit in the brief"; fails=$((fails+1)); cat "$T/seal.out"; fi
+  total=$((total+1)); if [ "$(sed -n '2,$p' "$R/working/task-1/brief.md" | grep -c '^# brief$')" = 1 ]; then echo "  ok    $shell: the approved text survives sealing"; else echo "  FAIL  $shell: sealing damaged the brief body"; fails=$((fails+1)); fi
+  case_ "$shell: sealed, clean tree allowed"            0 "$(run $shell verify-on-finish "$p_stop")"
+  # committed weakening: weaken, commit, then try to finish
+  weaken_commit
+  case_ "$shell: committed weakening blocked"           2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "since the task baseline" "$T/err"; then echo "  ok    $shell: the block names the task baseline"; else echo "  FAIL  $shell: the block does not name the baseline"; fails=$((fails+1)); fi
+  # renamed weakening: git mv, remove one assertion, stage it
+  git -C "$R" reset -q --hard "$init"
+  git -C "$R" mv tests/z.test.js tests/w.test.js
+  printf 'describe("z", () => {\n  test("one", () => {\n    expect(1).toBe(1);\n  });\n  test("two", () => {\n    expect(2).toBe(2);\n  });\n});\n' > "$R/tests/w.test.js"
+  git -C "$R" add -A
+  case_ "$shell: staged rename plus removed assertion blocked" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "renamed" "$T/err"; then echo "  ok    $shell: the block names the rename"; else echo "  FAIL  $shell: the block does not name the rename"; fails=$((fails+1)); fi
+  # a test added during the task, committed, then weakened: it has no baseline version, so HEAD is used
+  git -C "$R" reset -q --hard "$init"
+  printf 'test("n", () => { expect(1).toBe(1); expect(2).toBe(2); });\n' > "$R/tests/n.test.js"
+  git -C "$R" add -A; gitc commit -qm add-test 2>/dev/null
+  printf 'test("n", () => { expect(1).toBe(1); });\n' > "$R/tests/n.test.js"
+  case_ "$shell: test added during the task, then weakened, blocked" 2 "$(run $shell verify-on-finish "$p_stop")"
+  # a second brief, sealed later and closed, must not disable the one still open
+  git -C "$R" reset -q --hard "$init"
+  seal_ task-2; (cd "$R" && bash "$HERE/baseline.sh" close task-2 >/dev/null 2>&1)
+  weaken_commit
+  case_ "$shell: a closed brief does not disable the open one" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "working/task-1/brief.md" "$T/err"; then echo "  ok    $shell: the finding names the open brief"; else echo "  FAIL  $shell: the finding does not name the open brief"; fails=$((fails+1)); fi
+  rm -rf "$R/working/task-2"
+  # a rewritten baseline: the task branch is rebased, so the sealed commit is gone; the merge-base is used
+  git -C "$R" reset -q --hard "$init"; git -C "$R" checkout -q -b "feat-$shell"
+  printf 'f1\n' > "$R/f1.txt"; git -C "$R" add -A; gitc commit -qm f1 2>/dev/null
+  seal_ task-1
+  weaken_commit
+  git -C "$R" checkout -q "$trunk"; printf 'm1\n' > "$R/m1.txt"; git -C "$R" add -A; gitc commit -qm m1 2>/dev/null
+  git -C "$R" checkout -q "feat-$shell"; gitc rebase -q "$trunk" >/dev/null 2>&1
+  case_ "$shell: rebased task branch compared from the merge-base" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "merge-base" "$T/out"; then echo "  ok    $shell: the rewritten baseline is announced"; else echo "  FAIL  $shell: no merge-base note"; fails=$((fails+1)); fi
+  git -C "$R" checkout -q "$trunk"; git -C "$R" branch -q -D "feat-$shell"; git -C "$R" reset -q --hard "$init"
+  # closed brief: back to HEAD, so a committed weakening is invisible again (the documented limit)
+  seal_ task-1
+  weaken_commit
+  (cd "$R" && bash "$HERE/baseline.sh" close task-1 >/dev/null 2>&1)
+  case_ "$shell: closed brief falls back to HEAD"        0 "$(run $shell verify-on-finish "$p_stop")"
+  # a baseline commit that does not exist: HEAD again, with a note
+  awk '/^baseline_commit\.repo: /{print "baseline_commit.repo: 0123456789abcdef0123456789abcdef01234567"; next} /^closed_at:/{next} {print}' "$R/working/task-1/brief.md" > "$T/b.tmp" && mv "$T/b.tmp" "$R/working/task-1/brief.md"
+  case_ "$shell: nonexistent baseline commit falls back to HEAD" 0 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "does not exist" "$T/out"; then echo "  ok    $shell: the fallback is announced"; else echo "  FAIL  $shell: no fallback note"; fails=$((fails+1)); fi
+done
+git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+
+echo "baseline.sh"
+mkdir -p "$R/working/task-2"; printf -- '---\nowner: someone\n---\n\n# brief\n' > "$R/working/task-2/brief.md"; printf 'wip\n' > "$R/owner-wip.txt"
+(cd "$R" && bash "$HERE/baseline.sh" seal task-2 >/dev/null 2>&1)
+total=$((total+1)); if grep -q "owner-wip.txt" "$R/working/task-2/pre-existing.txt" && grep -q '^pre_existing: 1$' "$R/working/task-2/brief.md"; then echo "  ok    seal records a pre-existing untracked file"; else echo "  FAIL  seal missed the pre-existing file"; fails=$((fails+1)); fi
+total=$((total+1)); if grep -q '^owner: someone$' "$R/working/task-2/brief.md"; then echo "  ok    seal keeps front matter the brief already had"; else echo "  FAIL  seal dropped existing front matter"; fails=$((fails+1)); fi
+(cd "$R" && bash "$HERE/baseline.sh" seal task-2 >/dev/null 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -ne 0 ]; then echo "  ok    seal refuses to re-seal without --force"; else echo "  FAIL  seal re-sealed silently"; fails=$((fails+1)); fi
+(cd "$R" && bash "$HERE/baseline.sh" check task-2 >/dev/null 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -eq 0 ]; then echo "  ok    check passes on an unchanged brief"; else echo "  FAIL  check failed on an unchanged brief"; fails=$((fails+1)); fi
+printf 'changed after approval\n' >> "$R/working/task-2/brief.md"
+(cd "$R" && bash "$HERE/baseline.sh" check task-2 >"$T/check.out" 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "BRIEF CHANGED" "$T/check.out"; then echo "  ok    check detects a brief changed after approval"; else echo "  FAIL  check missed a changed brief"; fails=$((fails+1)); fi
+rm -f "$R/owner-wip.txt"
 
 echo "resume-brief"
 W="$T/ws"; mkdir -p "$W/working/task-1"

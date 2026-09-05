@@ -18,7 +18,7 @@ yes before creating it:** which branch, into which target, with which title.
 | Check | If it fails |
 |---|---|
 | not on the target branch | stop: switch to the working branch first |
-| working tree clean | say what is uncommitted; commit or stash before continuing |
+| the task's own work is committed | say what is uncommitted. Files named in `working/<task>/pre-existing.txt` belong to the owner: leave them as they are, never commit or stash them. Commit the task's own paths before continuing |
 | commits ahead of the target: `git log origin/<target>..HEAD --oneline` | stop: nothing to open |
 | no pull request already open for this branch | stop and give its link |
 | the target matches the project rule's branch model, or the branch sentence agreed in `/work` | ask one question with the options named |

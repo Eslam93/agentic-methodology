@@ -10,6 +10,7 @@ What lives here, and what does not:
 | `status.md`: where the last session got to, rewritten by `/handoff` | a finding about how the project works: the knowledge base, via `/record` |
 | `handoffs/<date>-<slug>.md`: one file per session handover | something noticed and not acted on: `99-pending.md` in the knowledge base, one line, same turn |
 | `<task>/brief.md` and `<task>/phases/`: the agreed brief and phase briefs for the task in flight, read back after a compaction | an idea about the harness: `99-pending.md` too |
+| `<task>/pre-existing.txt`: the files that were already dirty when the brief was sealed. They belong to the owner and stay out of task commits | |
 | `<task>/test-guide.md`: the plain-English test steps for the task in flight | a secret value: nowhere, ever |
 | `documents/<slug>.md`: proposals, specs, plans, anything we intend to do | |
 | `evidence/`: command output you are reading once | |

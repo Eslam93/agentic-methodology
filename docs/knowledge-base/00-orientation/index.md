@@ -40,6 +40,7 @@ reverify_when: Every time a page is added, superseded, or removed
 | `_investigations/2026-09-05-v2-rewrite/methodology.md` | the commits and commands behind every number on the v2 pages |
 | `_investigations/2026-09-05-v2-rewrite/acceptance.md` | how each of the seventeen acceptance tests was run and what it returned; all seventeen passed on 2026-09-05 |
 | `_investigations/2026-09-05-benchmark/methodology.md` | the commands, commits, and agent runs behind every number on the benchmark pages, and what the benchmark left unverified |
+| `_investigations/2026-09-05-task-baseline/methodology.md` | what the sealed task baseline records, what the Stop hook mechanically detects since it, what `/work` only instructs, and the runs that proved the two cases a `HEAD` comparison cannot detect |
 | `99-pending.md` | everything found and not acted on |
 
 ## What is empty, and deliberately

@@ -78,7 +78,12 @@ A bottom line of what you are about to do, then the details, in the house writin
 Then stop. **That is the only approval you ask for.** If they change something, fold it in and
 restate only what changed. Write the agreed summary and checklist to `working/<task>/brief.md`:
 after a compaction the `resume-brief` hook reads it back, so the build continues from the agreement
-rather than from a summary. A real fork decided here goes to `decisions.md` through `/record`.
+rather than from a summary. Then seal it: `bash .claude/tools/baseline.sh seal <task>` writes the
+approval time, the digest of the agreed text, and the commit every checkout is at into that brief's
+own front matter, and lists the files already dirty in `working/<task>/pre-existing.txt`. That
+commit is the task's baseline: the Stop hook diffs tests against it until the task closes, and it
+does not move when you commit. Re-seal only when the owner changes the agreement, with `--force`,
+and say so. A real fork decided here goes to `decisions.md` through `/record`.
 
 ## 4 · Route: what the yes decided
 
@@ -88,8 +93,12 @@ supports, push back only with evidence, then go. Otherwise go.
 
 ## 5 · Build: uninterrupted
 
-- **Commit a checkpoint first.** Git is the undo; the session's own checkpoints do not track changes
-  made through the shell.
+- **Git is the undo.** The sealed baseline commit is the point to return to; the session's own
+  checkpoints do not track changes made through the shell. Commit task work early, on task-owned paths only:
+  `git add -- <paths>`, never `git add -A`, `git add .`, or `commit -a`. The files in
+  `working/<task>/pre-existing.txt` were dirty before the task and belong to the owner: leave them
+  out of every commit. If the task must edit one of them, say so once and ask before the first
+  commit that would carry it.
 - **Ask for a goal only when the finish condition is machine-decidable.** `/goal` is typed by the
   owner, never by the assistant (measured 2026-09-05): ask for `/goal` with the verify command and
   the checklist lines a check can prove. When it is not decidable, the brief file is the goal. A
@@ -118,7 +127,9 @@ a finding is evidence-only.
 
 ## 7 · Hand back, in this order
 
-a. `git diff --name-only` before reading any content. Did this change something it should not have?
+a. `bash .claude/tools/baseline.sh check <task>`: a brief changed since approval is a finding of its
+   own, reported before the checklist. Then `git diff --name-only` before reading any content. Did
+   this change something it should not have?
 b. Read the test diff before the code diff, then the whole diff for things nobody asked for.
 c. Report against the checklist, line by line: built, ran and did the thing, or not verified.
    Evidence, not claims: the command and what it returned.
@@ -126,7 +137,9 @@ d. The direction delta, one line: what shipped, in product terms, versus what wa
 e. What to try themselves: open this, do this, expect that. The test guide carries it.
 f. `/pr` when they say so. The test guide becomes the "How to test" section.
 g. `/board` proposes the tracker update and stops. Never a tracker write in the same turn.
-h. Anything learned goes through `/record`, with evidence and what was not checked. Open threads go
+h. When the owner accepts, `bash .claude/tools/baseline.sh close <task>`: from then on the Stop hook
+   compares against `HEAD` again. Name any pre-existing file the task left untouched.
+i. Anything learned goes through `/record`, with evidence and what was not checked. Open threads go
    to `99-pending.md`, never to `working/`. Then `/handoff` if the session is ending.
 
 ## What not to do

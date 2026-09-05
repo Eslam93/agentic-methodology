@@ -34,8 +34,10 @@ tiered down. Round up when unsure.
 After the yes, **build uninterrupted.** Pause only for the stop-list: a Tier-3 area touched
 unexpectedly · a new dependency · a schema or migration change · data deletion · anything reaching
 production or an unfamiliar remote · two failed attempts at the same thing · scope growing past the
-agreed boundary. Everything else waits for the hand-back. Before any autonomous run, commit a
-checkpoint: git is the undo, not the session's own checkpoints.
+agreed boundary. Everything else waits for the hand-back. Before any autonomous run, seal the task
+baseline (`baseline.sh seal`), or commit a checkpoint when there is no brief to seal: git is the
+undo, not the session's own checkpoints. Task commits stay on task-owned paths; files dirty before
+the task belong to the owner.
 
 ## What counts as done
 
@@ -61,7 +63,8 @@ checkpoint: git is the undo, not the session's own checkpoints.
 Everything in this folder is advice except four hooks. `guard-secrets` blocks a secret **value**
 written through Edit or Write. `guard-commands` blocks the destructive commands on its list, which
 starts empty and grows from incidents. `verify-on-finish` blocks a turn that weakened, skipped, or
-deleted a test. `resume-brief` re-reads the task brief after a compaction. No hook sees a browser,
+deleted a test since the task baseline, or since `HEAD` when none is sealed. `resume-brief`
+re-reads the task brief after a compaction. No hook sees a browser,
 an MCP call, chat, or a shared folder. **Rules and hooks load at session start: restart the session
 after changing either.**
 
