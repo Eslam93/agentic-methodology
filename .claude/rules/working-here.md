@@ -12,9 +12,10 @@ search for the same root cause. Same cause with a different symptom means merge,
   path derived from it, including the script's own, and a missing dependency then fails silently.
   Resolve `_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` before any `cd`, and `exit 1` on
   a missing dependency, never `&&`. 2026-08-31.
-- **A `grep` pattern starting with `-` is parsed as an option.** Both `grep` and `grep -v` return
-  empty, and a static check goes green with none of the work done. Use `grep -E -e "$pattern"`.
-  2026-08-24.
+- **An argument starting with `-` is parsed as an option**, by `grep`, `yes`, `printf`, and most
+  tools. `grep` and `grep -v` both return empty, so a static check goes green with none of the work
+  done; `yes "- text"` fails silently inside a pipeline. Use `grep -E -e "$pattern"`, `printf --`,
+  and `--` before any such argument. 2026-08-24, again 2026-09-05.
 - **An empty set passes every "is it small enough" check.** An unmatched glob runs the loop once
   with a name that does not exist. Count the files as well as the lines, and fail on zero. 2026-08-31.
 - **A pipeline of two commands reports the exit code of the last one.** `git push a; git push b`
@@ -55,6 +56,10 @@ search for the same root cause. Same cause with a different symptom means merge,
   --write-tree`, then `--diff-filter=D`. The diff people read is the one they asked for. 2026-08.
 - **`git diff --stat` draws an all-minus bar for any heavily negative change.** Use `--name-status`
   to ask about deletions.
+- **`git -C <subfolder>` acts on the enclosing repository when the subfolder is not a repository of
+  its own.** `git -C working remote -v` printed the parent's remote, so a "no remote" check answers
+  about the wrong repository. Test for `<subfolder>/.git` before asking git anything about it.
+  2026-09-05.
 
 ## Hooks
 

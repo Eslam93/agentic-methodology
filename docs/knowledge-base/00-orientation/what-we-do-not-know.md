@@ -10,16 +10,20 @@ known_gaps: The most likely place for unknown unknowns is whatever has not been 
 reverify_when: After each phase of the v2 plan
 ---
 
-## Root cause A · nothing in the harness has run yet
+## Root cause A · parts of the harness have not run in a fresh session
 
-Closes with Phases 2 to 4 of the plan. Cost: the build itself.
+Closed in part by Phase 4 on 2026-09-05; see `../_investigations/2026-09-05-v2-rewrite/acceptance.md`.
+What remains needs a session started after the install, which this build's session could not be.
 
-| Unknown | Page it limits |
-|---|---|
-| Do `PreToolUse` and `Stop` hooks fire on the desktop-app surface on Windows? The source installation measured them on a CLI-era setup in 2026-08 | `start-here.md`, fact 5 |
-| Does a rule with a `paths:` block stay out of context until a matching file is touched, on the current Claude Code version? Field reports of silent failure exist | `decisions.md`, D-03 |
-| Does `/goal <condition>` behave as documented, a separate evaluator re-checking after every turn? Read in the docs, never run | `decisions.md`, D-04 |
-| Does `verify.sh` fail when it should? It is trusted only after the canary and one deliberate break | the plan's Phase 4 |
+| Unknown | State on 2026-09-05 | Page it limits |
+|---|---|---|
+| Do the always-loaded rules load in a fresh session, and answer a question without a file read? | not run; the session that built them started before they existed | `start-here.md`, fact 5 |
+| Does a rule with a `paths:` block stay out of context until a matching file is touched? Field reports of silent failure exist | not run, same reason | `decisions.md`, D-03 |
+| Does `/goal <condition>` behave as documented, a separate evaluator re-checking after every turn? | not run; a user-typed command the assistant cannot issue | `decisions.md`, D-04 |
+| Does the `resume-brief` hook put the brief back after a real compaction? | fired by hand only; no compaction occurred in the build session | `decisions.md`, D-04 |
+| Do `PreToolUse` hooks fire on the desktop app? | verified live: the secret guard blocked a real write and allowed the false-positive case | closed |
+| Does the `Stop` hook fire live? | the last act of the build session weakened a committed test and ended the turn; the result is on the acceptance page | `start-here.md`, fact 5 |
+| Does `verify.sh` fail when it should? | verified: the canary fails, a removed hook fails the pair check with the file named, 200 padding lines fail the budget | closed |
 
 ## Root cause B · one person, one machine
 

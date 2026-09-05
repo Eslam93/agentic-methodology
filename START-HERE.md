@@ -148,7 +148,7 @@ Run these and report the results honestly. Do not report a pass you did not obse
 | 10 | pick three knowledge-base claims at random and re-derive them from the cited evidence | all three check out, or are corrected on the spot |
 | 11 | grep the knowledge base for a corrected claim, by symbol | no survivors |
 | 12 | read any page's `known_gaps` | it names something real that was not checked |
-| 13 | `git -C working remote -v` | empty. `working/` never has a remote |
+| 13 | `git check-ignore -q working/probe`, and look for `working/.git` | ignored, and either no repository of its own or one with no remote. In shape A a plain `git -C working remote -v` shows the enclosing repository's remote, which is not a failure |
 | 14 | read the knowledge-base README | it names the shape that was chosen, and why |
 | 15 | after a compaction, continue a task with a brief in `working/<task>/brief.md` | the brief is back in context without anyone re-planning |
 | 16 | `/goal` with the verify command as the condition | the session keeps checking after each turn until it passes |

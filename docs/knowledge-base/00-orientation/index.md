@@ -33,6 +33,7 @@ reverify_when: Every time a page is added, superseded, or removed
 | `_readings/harness-standards-2026-08.md` | the measured harness facts from a prior installation that changed this kit's design |
 | `_readings/v1-review-from-the-field-2026-08-03.md` | what a working installation said about v1: the two mechanisms worth keeping and the weaknesses v2 addresses |
 | `_investigations/2026-09-05-v2-rewrite/methodology.md` | the commits and commands behind every number on these pages |
+| `_investigations/2026-09-05-v2-rewrite/acceptance.md` | which of the seventeen acceptance tests passed, which failed, which could not run from the build session and why |
 | `99-pending.md` | everything found and not acted on |
 
 ## What is empty, and deliberately
