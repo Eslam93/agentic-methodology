@@ -76,6 +76,10 @@ and the second restores the newest task brief and calls it a guess. None of thes
 browser, an MCP call, chat, or a shared folder. **Rules and hooks load at session start: restart
 the session after changing either.**
 
+One more thing is mechanical, and it is a check rather than a hook: `verify.sh` refuses a knowledge
+base whose durable pages lack the required header, whose checked references do not resolve, or whose
+README states a count the tree contradicts. It decides structure, never whether a claim is true.
+
 ## Where things live
 
 | Path | What it is |

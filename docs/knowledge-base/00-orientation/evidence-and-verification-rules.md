@@ -7,7 +7,7 @@ verification_method: Consolidated from the AI Workspace Blueprint section 4, the
 scope: Every page in this knowledge base, and the model for any knowledge base the kit installs. The path-scoped rule .claude/rules/knowledge-base.md is the condensed form of this page
 confidence: High. These rules were paid for by named failures in the source installations, among them a refuted claim that survived five correction passes and a stale claim quoted as current months after the fix
 known_gaps: The claim-type table is new in v2 and has not yet been exercised across a full project
-reverify_when: The path-scoped rule and this page must say the same thing; check both when either changes
+reverify_when: The path-scoped rule and this page must say the same thing; check both when either changes, and section 3a whenever knowledge-check.sh changes
 ---
 
 ## 1 · The test for inclusion
@@ -63,6 +63,43 @@ reverify_when:        # the trigger: "when a module is added", "before any produ
 Then, on any page carrying volatile numbers, a three-line banner: **measured when** · **expires
 when somebody does their job** · **stays true regardless**. Writing it forces the separation
 between the durable finding and the perishable number.
+
+## 3a · What of this page a check enforces
+
+Most of this page is a convention a reader has to keep. Since 2026-09-05 a small, objective part of
+it is executable: `bash .claude/tools/verify.sh` runs `knowledge-check.sh` on every page here.
+
+**Checked.** All nine fields of the header above are present and non-empty on every durable page.
+`status` is one of the four values listed. `confidence` begins with High, Medium, or Low. `as_of`
+and `last_verified` are real calendar days in `YYYY-MM-DD`, and `last_verified` is not earlier than
+`as_of`. `supersedes` is optional; when it names a page, that page exists and is not this one. Local
+Markdown links, backticked references beginning `../` or `./`, and any `repo:` path or `commit:` sha
+resolve. Every decision code cited anywhere here is defined in `decisions.md`, and no decision
+supersedes itself. A short curated list of counts the README derives from the tree still agrees with
+it.
+
+**Not checked, and deliberately.** Whether any claim is true. Whether the `confidence` word is the
+right one. Whether `verification_method` describes something that happened. Whether `known_gaps`
+names anything real. Whether a resolving commit supports the sentence beside it. Whether a fact has
+gone stale since `last_verified`, because a check that reddens with no change in the repository is
+one nobody can act on. The 150-to-400-line rule in section 15. External URLs, which are never
+fetched. And the great majority of citations in this base, which are ordinary backticked prose:
+only syntax that cannot be mistaken for prose is read as a reference, because this base cites other
+repositories and scratch trees on purpose.
+
+**Two exempt files**, by document class rather than by name list: `99-pending.md`, whose shape is
+section 11, and this base's `README.md`, its front door. Neither is a durable knowledge page. Both
+are still subject to every reference check.
+
+**When evidence must be mechanically checkable, write it as a citation rather than as prose:**
+
+```text
+`repo:.claude/hooks/verify-on-finish.sh`   a path from the project root, checked to exist
+`commit:7f8620b`                            a commit, checked to resolve
+```
+
+A green result means the record is structurally valid and its checked references resolve. It does
+not mean the record is correct.
 
 ## 4 · What every claim carries
 

@@ -3,8 +3,10 @@
 #
 #   bash .claude/tools/verify.sh            the fast checks
 #   bash .claude/tools/verify.sh --full     also runs the project's own checks (verify.project.sh)
-#   bash .claude/tools/verify.sh --hooks    fires every hook by hand (hooks.test.sh); run after install
-#   bash .claude/tools/verify.sh --canary   MUST FAIL. Proves this script can report a failure
+#   bash .claude/tools/verify.sh --hooks    fires every hook by hand, and runs the knowledge-check
+#                                           cases; run after install
+#   bash .claude/tools/verify.sh --canary   MUST FAIL. Proves this script can report a failure, and
+#                                           that the knowledge checks go red on a broken record
 #
 # Every check here exists because the corresponding thing went wrong somewhere. Traps deliberately
 # avoided, each of which has produced a confident PASS over a broken tree:
@@ -39,6 +41,27 @@ echo "verify.sh  root=$ROOT"
 echo
 
 if [ "$mode" = "--canary" ]; then
+  # Two things, and the run fails either way so that a green canary stays impossible. First, that
+  # the knowledge-integrity check reports a broken record rather than merely existing: a page that
+  # is invalid three ways is built here and the real validator is run against it. A canary that only
+  # asserted the script is on disk would pass over a validator that had stopped checking anything.
+  if [ -f .claude/tools/knowledge-check.sh ]; then
+    c="$(mktemp -d 2>/dev/null || mktemp -d -t canary)"
+    mkdir -p "$c/docs/knowledge-base"
+    printf '%s\n' '---' 'title: A deliberately invalid page' 'status: verified' \
+      'as_of: 2026-09-05' 'last_verified: not-a-date' \
+      'verification_method: built by verify.sh --canary' 'scope: the canary only' \
+      'confidence: High. it is generated' 'reverify_when: never' '---' '' \
+      'known_gaps is missing, last_verified is not a date, and this link is dead:' \
+      '[gone](../nowhere.md)' > "$c/docs/knowledge-base/broken.md"
+    if bash .claude/tools/knowledge-check.sh "$c" >/dev/null 2>&1; then
+      bad "knowledge integrity goes red on a broken record" \
+          "it passed a page missing a required field, carrying a malformed date, and holding a dead link; the knowledge checks prove nothing"
+    else
+      ok "knowledge integrity goes red on a broken record (missing field, bad date, dead link)"
+    fi
+    rm -rf "$c"
+  fi
   bad "canary: this check must fail" "if this run reports success, the runner is lying and its greens are void"
   echo; echo "  $PASS passed, $FAIL failed (canary run)"; exit 1
 fi
@@ -133,6 +156,31 @@ else
   if [ -z "$links" ]; then ok "knowledge base never links into working/"; else bad "knowledge base never links into working/" "$(echo "$links" | cut -c1-100 | tr '\n' ' ')"; fi
 fi
 
+# --- 8b · knowledge integrity: structure, references, curated drift -----------------------------
+# Structural validity is not truth. A green here says the pages carry the header the rules require
+# and that every reference this can identify resolves. It says nothing about whether a claim on any
+# of those pages is correct; that is a reader's job and an independent review's.
+if [ -n "$kb" ] && [ -f .claude/tools/knowledge-check.sh ]; then
+  kcout="$(bash .claude/tools/knowledge-check.sh --porcelain 2>&1)"
+  if [ -z "$kcout" ]; then
+    bad "knowledge integrity ran" "knowledge-check.sh produced no output, so it checked nothing"
+  else
+    seen_section=0
+    while IFS= read -r l; do
+      case "$l" in
+        SECTION\ *)
+          seen_section=$((seen_section+1))
+          rest="${l#SECTION }"; sec="${rest%% *}"
+          rest="${rest#* }";    verdict="${rest%% *}"; detail="${rest#* }"
+          if [ "$verdict" = "PASS" ]; then ok "knowledge $sec: $detail"
+          else bad "knowledge $sec" "$detail"; fi ;;
+      esac
+    done <<< "$kcout"
+    [ "$seen_section" -eq 0 ] && bad "knowledge integrity ran" "no section result came back; the check is not reporting"
+    printf '%s\n' "$kcout" | grep '^DETAIL ' | sed 's/^DETAIL /      /'
+  fi
+fi
+
 # --- 9 · no secret-shaped value in anything git can see -----------------------------------------
 hits="$(git ls-files --cached --others --exclude-standard 2>/dev/null \
         | grep -vE '^(\.claude/hooks/|\.claude/tools/verify\.sh$)' \
@@ -166,6 +214,12 @@ if [ "$mode" = "--hooks" ]; then
   if [ -f .claude/tools/hooks.test.sh ]; then
     if bash .claude/tools/hooks.test.sh; then ok "hooks.test.sh passed"; else bad "hooks.test.sh passed" "a hook that should block did not, or one that should allow blocked; see above"; fi
   else bad "hooks.test.sh present" "missing"; fi
+
+  echo; note "knowledge-check cases (the validator run against fixtures, one per invariant)"
+  if [ -f .claude/tools/knowledge-check.test.sh ]; then
+    if bash .claude/tools/knowledge-check.test.sh; then ok "knowledge-check.test.sh passed"
+    else bad "knowledge-check.test.sh passed" "an invalid record passed, or a valid one failed; see above"; fi
+  else bad "knowledge-check.test.sh present" "missing"; fi
 fi
 
 # --- 14 · the project's own checks, only with --full ----------------------------------------------

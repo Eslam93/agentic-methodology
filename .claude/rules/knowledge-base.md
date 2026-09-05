@@ -54,6 +54,20 @@ the source. Dates are ISO days; add a time only when two measurements on one day
 - `decisions.md`: one entry per real fork, newest first: decision · options · why · by ·
   reversible · revisit when · supersedes.
 
+## What a check enforces, and what is on you
+
+`verify.sh` runs `knowledge-check.sh` over this base. It refuses a durable page missing any of the
+nine header fields or leaving one empty, a `status` outside its four values, a `confidence` not
+opening High, Medium, or Low, an `as_of` or `last_verified` that is not a calendar day or is out of
+order, a local link or `../` reference that does not resolve, a `repo:` path or `commit:` sha that
+does not exist, a decision code `decisions.md` does not define, and a curated README count the tree
+contradicts. `99-pending.md` and this base's `README.md` are exempt from the header only.
+
+It cannot tell whether anything you write is true, whether the confidence word is right, or whether
+a resolving commit supports the sentence beside it. Write evidence you want checked as
+`repo:<path>` or `commit:<sha>`; anything else stays prose. A green result means structurally
+valid, not correct.
+
 ## Corrections
 
 - **You were wrong:** fix the claim, delete the wrong version, do not narrate the fix. Keep a

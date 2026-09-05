@@ -38,7 +38,7 @@ volatile status.** That boundary is the design.
 
 ## What is in the box
 
-Four rules, ten skills, four hooks, six tools. Install is a copy.
+Four rules, ten skills, four hooks, eight tools. Install is a copy.
 
 | Part | What it does |
 |---|---|
@@ -54,7 +54,8 @@ Four rules, ten skills, four hooks, six tools. Install is a copy.
 | **`/explain`** `/summarize` | the real version at a named audience, with a verify mode that re-checks a claim against the current tree; and the short version, without losing the caveats |
 | **four hooks** | a secret value is blocked before it is written; a test weakened, skipped, or deleted blocks the turn, measured from the baseline of the task this session carries when there is one, and from `HEAD` otherwise; a destructive-command list that starts empty and grows from incidents; that same task's brief re-read after a compaction |
 | **`baseline.sh`** | seals the task's starting point into the agreed brief at the owner's yes, the approval time, the tier, the digest of the agreed text, and the commit of every checkout, beside a list of the files that were already dirty; and, when the host gives a session id, binds that brief to the Claude session, so both hooks know which agreement this session is carrying instead of taking the newest file. Unbound, both fall back and say so. `check` at hand-back reads it all back, and refuses a Tier 3 task with neither a completed independent review nor an owner's waiver |
-| **`verify.sh`** | the checks that exist here, a canary that must fail, and a hook test suite that proves the guards can go red |
+| **`knowledge-check.sh`** | the knowledge base's mechanical floor: every durable page carries the header the rules require, the values with an objective shape have it, and every reference it can identify without guessing resolves, which is local links, page-relative references, `repo:` paths, `commit:` shas, and decision codes. It also proves a short curated list of counts the README states still matches the tree. It decides structure, never truth |
+| **`verify.sh`** | the checks that exist here, a canary that must fail, and two test suites that prove the guards and the knowledge checks can go red |
 
 Every hook ships in PowerShell and in Bash. Windows was the first platform, not an afterthought.
 
@@ -156,11 +157,12 @@ The reasoning is all recorded, with what each decision superseded and when to re
 
 ## Status and limits
 
-`v2.0.0`, 2026-09-05. Twelve of seventeen acceptance tests passed, three of them live on the Claude
-Code desktop app: the secret guard blocked a real write and allowed the false-positive case, and the
-Stop hook blocked a weakened test. The remaining five need a session started after the install or a
-command only a human types; they are listed with exact steps on the acceptance page. CI runs the
-checks, the canary, and the hook tests on Linux on every push.
+`v2.0.0`, 2026-09-05. Seventeen acceptance tests, seventeen passed, seven of them live on the Claude
+Code desktop app rather than by hand: the secret guard blocked a real write and allowed the
+false-positive case, the Stop hook blocked a weakened test, the path-scoped rule loaded on a real
+read, the resume hook fired on a real compaction, the goal evaluator blocked a failing stop, and
+`/board` proposed a close and stopped. The exact steps and the caveats per row are on the acceptance
+page. CI runs the checks, the canary, and both test suites on Linux on every push.
 
 The limits, stated once: nothing here has been shown by comparison to help. The measurements are one
 maintainer's, on Windows and Linux CI, dated in the knowledge base. The hooks see the editing tools
@@ -174,7 +176,7 @@ install it, write your own limits down the same way.
   rules/            standing-orders · writing · working-here · knowledge-base · methodology (this repo's own)
   skills/           orient · work · codex-relay · test-guide · pr · board · record · handoff · explain · summarize
   hooks/            guard-secrets · guard-commands · verify-on-finish · resume-brief, each .ps1 and .sh
-  tools/            layout.sh · verify.sh · hooks.test.sh · baseline.sh · install.sh · install.ps1
+  tools/            layout.sh · verify.sh · hooks.test.sh · baseline.sh · knowledge-check.sh · install.sh · install.ps1
   settings.json     the hook wiring
 docs/knowledge-base/  this repository's knowledge base
 working/            disposable; only its README is committed

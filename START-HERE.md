@@ -6,8 +6,9 @@ assistant, this file tells you what to do, in what order, and what to say before
 
 **Every step is optional and skipping is normal.** Skipping a step never ends the setup. When a
 step is approved, do the whole step; do not confirm file by file. Say the limits once, near the
-front, then stop repeating them: this kit enforces exactly four things through hooks, everything
-else is advice, and no hook sees a browser, an MCP call, chat, or a shared folder.
+front, then stop repeating them: this kit enforces exactly four things through hooks, one
+more through a `verify.sh` check over the knowledge base, everything else is advice, and none of
+these hooks sees a browser, an MCP call, chat, or a shared folder.
 
 **Say this before creating anything:** what will be created (a `.claude/` folder, a knowledge base,
 a disposable `working/` folder, a few ignore and attribute lines), that nothing is pushed anywhere,
