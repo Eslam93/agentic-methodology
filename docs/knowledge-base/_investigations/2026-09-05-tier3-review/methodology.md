@@ -6,7 +6,7 @@ last_verified: 2026-09-05
 verification_method: Thirteen cases added to hooks.test.sh and run on the owner's Windows machine on 2026-09-05, once each rather than once per shell, because baseline.sh is a bash tool with no PowerShell twin; the hook cases around them still run in both. A scratch repository produced the three outcomes by hand and the tool's output was captured. The wording changes were read against the tree they describe
 scope: The change decided as D-19: the tier field, the review record, the hand-back check, and the text in /work, the standing orders, and the README. Not the review routes themselves, which are unchanged, and not any new reviewer
 confidence: High for what the tool does, which is exercised by the suite, and for the two defects an independent review found and this page records. The contract itself is instruction-level in the one place that matters most, and that limit is stated below rather than softened
-known_gaps: Nothing verifies that a recorded review actually ran; the record is the builder's own statement. The digest covers only the body of the brief, so the tier line and the review lines can be hand-edited after sealing without check noticing: changing tier 3 to tier 2 removes the contract in one edit, which is cheaper than forging a review record. No case has been run through a real Tier 3 task end to end in a live session
+known_gaps: Nothing verifies that a recorded review actually ran; the record is the builder's own statement. The review lines sit outside seal_sha256 on purpose, because they are written later in the task, so a hand-written review record after sealing is still not detectable. The tier line is no longer in that position: Task Integrity 1.1 brought it inside the seal, so the one-line edit from tier 3 to tier 2 now blocks. No case has been run through a real Tier 3 task end to end in a live session
 reverify_when: On any change to baseline.sh or to the review menu in /work, and if a waiver is ever recorded on a real task, to see whether the wording held
 ---
 
@@ -85,9 +85,14 @@ forging a review record. Both were reproduced by the verifier of this change.
 What the change buys is that skipping is no longer the quiet default: it takes a deliberate,
 dated, attributable line in the agreed brief, and the hand-back check refuses to pass without
 one. That is the honest description, and it is the one the README and the standing orders carry.
-Extending the digest to cover the sealed lines would close the tier edit, and is in
-`99-pending.md` rather than done here, because it changes what `brief_sha256` means for every
-brief already sealed.
+
+**The tier edit was closed the same day** by Task Integrity 1.1, which added `seal_sha256` over the
+approval fields, `tier` among them: changing `tier: 3` to `tier: 2` after sealing now blocks the
+turn and fails `check`. It did not need a new meaning for `brief_sha256`, which is why it was
+cheaper than the fix considered here. The review lines stay outside that digest by design, because
+they are written later in the task, so forging a review record by hand remains undetectable and
+remains the load-bearing limit. Evidence:
+`../2026-09-05-task-baseline/methodology.md`.
 
 A stronger mechanism was considered and rejected in the same breath: a Stop hook that blocked every
 turn of a Tier 3 task until a review was recorded would interrupt the build for a condition that

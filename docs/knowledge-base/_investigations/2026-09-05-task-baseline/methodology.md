@@ -10,6 +10,13 @@ known_gaps: Only JavaScript-shaped fixtures were exercised; the assertion heuris
 reverify_when: On any change to baseline.sh, either verify-on-finish hook, or hooks.test.sh; before quoting the case count
 ---
 
+> **Amended twice on the same day.** Task Integrity 1.1 closed two holes in what this change
+> shipped: the seal metadata itself was outside every digest, so `baseline_commit` could be moved
+> to a later commit with the approved body untouched; and a test added during the task could be
+> weakened and the weakening committed, which made it invisible. Both are fixed and both have
+> cases. The sentences below that described the old behaviour are marked. See "Task Integrity
+> 1.1" at the end of this page.
+>
 > **Amended the same day by D-18.** This page records what this change shipped, in the past tense
 > where D-18 replaced it hours later: the Stop hook no longer reads every sealed brief and decides
 > which are open, and `baseline.sh close` and the `closed_at` key are gone. A session-scoped pointer
@@ -44,6 +51,7 @@ tier: <1|2|3>                                 # added by D-19
 baseline_commit.<checkout>: <full commit>     # one line per checkout
 brief_sha256: <sha256 of the text below the front matter>
 pre_existing: <count>
+seal_sha256: <sha256 of all of the above>     # added by Task Integrity 1.1
 closed_at: <UTC>                              # added by close; removed by D-18
 ```
 
@@ -86,8 +94,8 @@ in the checkout at all: `HEAD`. Each fallback prints a note; none of them blocks
 writes a baseline.
 
 **Instructed only (layer b).** That `/work` seals at the yes and checks the digest at hand-back;
-that a changed agreement becomes a new task brief rather than a moved seal, which the tool enforces
-by refusing to seal twice; that commits use
+that a changed agreement becomes a new task brief rather than a moved seal. Refusing to seal twice
+closed the explicit path; it did not stop a hand edit, which is what Task Integrity 1.1 closed; that commits use
 `git add -- <paths>` and never sweep the files in `pre-existing.txt`; that an edit to a pre-existing
 file is asked about once. No hook checks any of these. In particular, nothing stops `git add -A`;
 `guard-commands` has no entry for it, by D-11. Closing a baseline early was a hole here and is gone
@@ -184,8 +192,119 @@ hooks documentation, so no fallback note reaches the assistant.
 - `hooks.test.sh` itself matches the hook's test-file pattern, so the hook counts its own `test(`
   and `expect(` strings; adding cases raised the count, and removing cases would read as a
   weakening. Harmless here, and a reminder that the heuristic is lexical.
-- The digest covers the text below the front matter, so an edit to the front matter itself is not
-  what `check` compares; the recorded commit is checked against git separately.
+- **Corrected by Task Integrity 1.1.** `brief_sha256` covers the text below the front matter only,
+  so at first nothing covered the seal metadata itself. There are now two digests, and the section
+  below says which protects what.
 - A merge or pull that legitimately deletes a test keeps blocking for the rest of the session, since
   D-18 leaves no way to retire a baseline early and a seal cannot move. That is the friction D-17
   accepted; the block names the file, and a real incident is what would earn a waiver.
+
+## Task Integrity 1.1, the same day
+
+Two gaps in the implementation of what D-17 and D-18 decided, found by the owner reading the pushed
+tree. Neither was a reason to change the design, and neither did.
+
+### The approved starting point could be moved by hand
+
+`brief_sha256` covers the body below the front matter, which answers "is the agreement still the
+text that was approved". Nothing covered the front matter, which is where the approval itself lives.
+So an edit from
+
+```text
+baseline_commit.repo: A
+```
+
+to a later commit `B` left the body untouched, the body digest happy, and `check` reporting "brief
+unchanged since approval" while every weakening between `A` and `B` disappeared from what the Stop
+hook could see. Reproduced before the fix: with the true baseline the hook exited 2, and after the
+one-line edit it exited 0 and `check` exited 0 as well. Removing `--force` had closed the explicit
+re-seal path and left this one open.
+
+`seal_sha256` now covers the approval fields, and only those:
+
+| Protected by `brief_sha256` | Protected by `seal_sha256` | Deliberately mutable |
+|---|---|---|
+| the brief body, which is the agreement | `task`, `approved_at`, `tier`, every `baseline_commit.<checkout>`, `brief_sha256`, `pre_existing` | `review_status`, `review_route`, `review_evidence`, `review_waiver`, `review_at`, and any front matter the brief already carried |
+
+The third column is the point of having two digests rather than hashing the whole front matter: the
+Tier 3 review record is written later in the task, by design, and must not invalidate the approval.
+A case proves that recording a waiver after sealing is not read as tampering.
+
+The canonical input is a fixed field order, one `key: value` line each with a single space after the
+colon and the value trimmed, the per-checkout lines sorted by bytes, and a trailing newline, hashed
+as UTF-8. It is written to the brief in exactly that order, so the bytes behind the digest are the
+bytes on the page. Three implementations must agree: `baseline.sh`, and both Stop hooks. The
+PowerShell twin sorts with `StringComparer.Ordinal` rather than the culture sort, because
+`LC_ALL=C sort` is byte order and the culture sort is not, and a one-byte disagreement would make a
+valid seal read as tampered on one platform only.
+
+**A broken seal blocks; it does not fall back.** Every other failure in this hook falls back to
+`HEAD` and says so. This one cannot: the recorded starting point is what the comparison is measured
+from, so an edited seal can hide a weakening rather than merely lose the protection, and falling
+back to `HEAD` is exactly the outcome the edit produces. A brief carrying no `seal_sha256` at all is
+a different case, an absent legacy seal from before this existed, and keeps the old behaviour with
+no block. Both are cases.
+
+The `tier` line is inside the seal, which closes the `P2` recorded by the verifier of D-19: a
+one-line edit turning `tier: 3` into `tier: 2` used to remove the review contract, and now blocks.
+
+### A test added during the task could be weakened by committing it
+
+The `A` branch compared an added file against `HEAD`, because it has no version at the baseline.
+That catches a weakening still in the working tree, and nothing else: after
+
+```text
+baseline A
+commit B   add a test with two assertions
+commit C   remove one of them
+```
+
+`HEAD` is `C`, the working tree equals `C`, and the comparison has nothing to see. Reproduced before
+the fix at exit 0 with a clean tree.
+
+The fix is one git command: the version to compare against is the one at the commit that first added
+the file during this task, found with
+`git log --diff-filter=A --reverse --format=%H <baseline>..HEAD -- <file>`, taking the oldest. When
+that returns nothing, because the file was staged and never committed or because there is no task
+baseline, `HEAD` is still the only earlier version and is used. Ordinary baseline-existing tests and
+renames are untouched.
+
+The block names the commit that added the test:
+
+```
+WEAKENED repo/tests/n.test.js (added during the task)  (assertions 3 -> 2) since ede1296, the
+commit that added it during this task
+```
+
+### The suite
+
+`bash .claude/tools/hooks.test.sh`: **146 passed, 0 failed**, both shells, against 120 before this
+correction. Twenty-six assertions were added. Every D-17 and D-18 regression listed on this page and
+on the active-task page still passes, unchanged: committed weakening, staged rename, added test with
+an uncommitted weakening, rebased baseline, nonexistent baseline, body digest, refusal to re-seal,
+pre-existing recording, two-session isolation, pointer validation, the relay-brief refusal, and the
+resume fallbacks.
+
+One existing case had to be rebuilt rather than kept. "A nonexistent baseline commit falls back to
+HEAD" used to edit `baseline_commit` by hand to a commit that does not exist, which is now tampering
+and blocks. The state it was modelling is real, so it is now reached honestly: a brief is sealed in a
+second checkout of the same name and carried into the first, which is what happens in shape B when
+one clone lacks the commit. The seal stays valid because the brief was never edited.
+
+Both fixes were mutation-tested. Disabling the seal check failed three assertions, including the
+moved baseline and the edited tier; reverting the added-test branch to `HEAD` failed two, including
+the committed weakening. Restoring both returned 146 and 0.
+
+### Two limits confirmed and left alone
+
+**Pre-existing dirty tests are attributed to the task.** `seal` writes `pre-existing.txt`, and the
+Stop hook does not read it. Reproduced: weaken a test, leave it dirty, seal, change nothing at all,
+and the hook blocks with `WEAKENED ... since the task baseline`, naming the owner's own work. The
+snapshot exists and nothing consumes it. Recorded rather than fixed, because consuming it means
+deciding what happens when the owner's dirty file is later edited by the task, and that is a design
+question, not a patch.
+
+**`working/status.md` is still global.** The brief is session-scoped; the status file is not, and
+`resume-brief` prints it before the brief. Two concurrent sessions each get their own brief and both
+see whichever status was written last. D-18 never claimed general concurrency control, so this is a
+limit of the surrounding state, not a defect in the pointer.

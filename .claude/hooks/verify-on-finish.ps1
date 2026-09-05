@@ -33,8 +33,15 @@
         the weakened test is committed (measured 2026-09-05);
       - renames are detected (-M), so a staged git mv plus a removed assertion is compared old path
         to new path;
-      - a test added during the task has no version at the baseline, so it is compared against
-        HEAD, as it was before the baseline existed.
+      - a test added during the task has no version at the baseline, so it is compared against the
+        commit that first added it during the task; comparing against HEAD would see nothing once
+        the weakening was itself committed. With no baseline, or when the file was staged and never
+        committed, HEAD is the only earlier version and is used.
+    It also refuses to run on a moved seal: baseline.sh records seal_sha256 over the approval
+    fields, and if that no longer matches, the recorded starting point has been edited since
+    approval. That blocks (exit 2) rather than falling back, because falling back to HEAD is the
+    outcome such an edit is after. A brief with no seal_sha256 at all was sealed before this
+    existed and is treated as a legacy seal, not as tampering.
     Fallback, never a block, and never a guess at which task is active: no session id, no pointer, a
     pointer that does not resolve, a brief with no seal, or a seal that does not name this checkout,
     and the comparison is against HEAD as it was before this mechanism. A sealed commit rewritten by
@@ -146,6 +153,74 @@ function Get-Short {
     return $Value
 }
 
+# ---- is the approved starting point still the approved one? --------------------------------
+# Rendered byte for byte as baseline.sh and the bash twin render it: fixed field order, one
+# "key: value" line with a single space, values trimmed, per-checkout lines sorted by BYTES
+# (Ordinal, not the culture sort, which would disagree with LC_ALL=C on mixed case), trailing
+# newline, UTF-8. One byte of difference and a valid seal reads as tampered on one platform only.
+function Get-CanonicalSeal {
+    param([string[]]$Fm)
+    $out = @()
+    foreach ($k in @('task', 'approved_at', 'tier')) {
+        $hit = $Fm | Where-Object { $_.StartsWith("${k}:", [System.StringComparison]::Ordinal) } | Select-Object -First 1
+        if ($hit) { $out += "${k}: " + $hit.Substring($k.Length + 1).Trim() }
+    }
+    $bc = @()
+    foreach ($l in $Fm) {
+        if ($l -cmatch '^(baseline_commit(\.[^:]*)?):(.*)$') { $bc += ($Matches[1] + ': ' + $Matches[3].Trim()) }
+    }
+    if ($bc.Count -gt 0) {
+        $bcArr = [string[]]$bc
+        [Array]::Sort($bcArr, [System.StringComparer]::Ordinal)
+        $out += $bcArr
+    }
+    foreach ($k in @('brief_sha256', 'pre_existing')) {
+        $hit = $Fm | Where-Object { $_.StartsWith("${k}:", [System.StringComparison]::Ordinal) } | Select-Object -First 1
+        if ($hit) { $out += "${k}: " + $hit.Substring($k.Length + 1).Trim() }
+    }
+    if ($out.Count -eq 0) { return '' }
+    return (($out -join "`n") + "`n")
+}
+function Get-Sha256Hex {
+    param([string]$Text)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+        return (($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
+    } finally { $sha.Dispose() }
+}
+
+if ($briefFile) {
+    $sealHit = $fm | Where-Object { $_.StartsWith('seal_sha256:', [System.StringComparison]::Ordinal) } | Select-Object -First 1
+    if ($sealHit) {
+        $want = ($sealHit.Trim() -split '\s+')[-1]
+        $have = Get-Sha256Hex (Get-CanonicalSeal $fm)
+        if ($want -ne $have) {
+            # A brief with no seal_sha256 was sealed before this existed: an absent legacy seal,
+            # which keeps the old path. A digest that does not match is a different thing. The
+            # comparison base itself may have been moved, so falling back to HEAD would hand the
+            # edit exactly what it was after. There is no safe base left, so the turn stops.
+            $m = @()
+            $m += "STOP: the sealed approval in $briefName has been edited since it was approved."
+            $m += ''
+            $m += '  seal_sha256 does not match the approval fields now in the brief. One of task,'
+            $m += '  approved_at, tier, baseline_commit, brief_sha256, or pre_existing has changed.'
+            $m += ''
+            $m += 'This is not the same as a task with no baseline. The recorded starting point is what'
+            $m += 'every test comparison in this session is measured from, so a moved baseline can hide'
+            $m += 'a weakening rather than merely lose the protection. Comparing against HEAD instead'
+            $m += 'would be exactly the outcome the edit produces, so this turn stops.'
+            $m += ''
+            $m += 'Do one of these, then finish:'
+            $m += '  - restore the sealed values from git or from the owner''s record; or'
+            $m += '  - if the agreement really changed, say so to the owner, write a new brief under'
+            $m += '    working/<new-task>/ and seal that one, leaving this approval readable beside it.'
+            [Console]::Error.WriteLine(($m -join "`n"))
+            exit 2
+        }
+    }
+}
+
 function Test-IsTestFile {
     param([string]$Path)
     return ($Path -match '(?i)(\.test\.|\.spec\.|Tests?\.cs$|(^|[\\/])(tests?|__tests__)[\\/])')
@@ -210,10 +285,25 @@ foreach ($repo in $repos) {
             if (-not ((Test-IsTestFile $file) -or (Test-IsTestFile $file2))) { continue }
             $label = "$name/$file -> $file2 (renamed)"; $new = $file2
         } elseif ($code -like 'A*') {
-            # added during the task: its only earlier version is the one committed since the baseline
+            # A test that did not exist at the baseline was introduced during this task, so there
+            # is no baseline version. Comparing against HEAD catches a weakening that is still
+            # uncommitted, and nothing else: once the weakening is committed, HEAD is the weakened
+            # version and the two sides are identical. So compare against the version at the commit
+            # that first added the file during this task.
             if (-not (Test-IsTestFile $file)) { continue }
-            if (-not (Test-Git $repo @('cat-file', '-e', "HEAD:$file"))) { continue }
-            $label = "$name/$file (added during the task)"; $cmpBase = 'HEAD'; $cmpSince = 'HEAD'
+            $first = $null
+            if ($base -ne 'HEAD') {
+                $log = Invoke-Git $repo @('log', '--diff-filter=A', '--reverse', '--format=%H', "$base..HEAD", '--', $file)
+                if ($log) { $first = @($log) | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1 }
+            }
+            if ($first) {
+                $first = $first.Trim()
+                $label = "$name/$file (added during the task)"; $cmpBase = $first
+                $cmpSince = "$(Get-Short $first), the commit that added it during this task"
+            } elseif (Test-Git $repo @('cat-file', '-e', "HEAD:$file")) {
+                # staged but never committed, or no task baseline: HEAD is the only earlier version
+                $label = "$name/$file (added during the task)"; $cmpBase = 'HEAD'; $cmpSince = 'HEAD'
+            } else { continue }
         } else { continue }
         $before = (Invoke-Git $repo @('show', "${cmpBase}:$old")) -join "`n"
         $afterPath = Join-Path $repo $new

@@ -115,12 +115,53 @@ for shell in $shells; do
   git -C "$R" add -A
   case_ "$shell: staged rename plus removed assertion blocked" 2 "$(run $shell verify-on-finish "$p_stop")"
   total=$((total+1)); if grep -q "renamed" "$T/err"; then echo "  ok    $shell: the block names the rename"; else echo "  FAIL  $shell: the block does not name the rename"; fails=$((fails+1)); fi
-  # a test added during the task, committed, then weakened: it has no baseline version, so HEAD is used
+  # A test added during the task has no version at the baseline. Three cases, and the middle one is
+  # the hole Task Integrity 1.1 closed: comparing against HEAD sees an uncommitted weakening and
+  # nothing else, because once the weakening is committed HEAD IS the weakened version.
   git -C "$R" reset -q --hard "$init"
   printf 'test("n", () => { expect(1).toBe(1); expect(2).toBe(2); });\n' > "$R/tests/n.test.js"
   git -C "$R" add -A; gitc commit -qm add-test 2>/dev/null
+  case_ "$shell: test added during the task, not weakened, allowed" 0 "$(run $shell verify-on-finish "$p_stop")"
   printf 'test("n", () => { expect(1).toBe(1); });\n' > "$R/tests/n.test.js"
   case_ "$shell: test added during the task, then weakened, blocked" 2 "$(run $shell verify-on-finish "$p_stop")"
+  gitc commit -qam weaken-added 2>/dev/null
+  total=$((total+1)); if [ -z "$(git -C "$R" status --porcelain)" ]; then echo "  ok    $shell: the weakening of the added test is committed, tree clean"; else echo "  FAIL  $shell: the added-test weakening did not commit"; fails=$((fails+1)); fi
+  case_ "$shell: added test weakened and COMMITTED still blocked" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "the commit that added it during this task" "$T/err"; then echo "  ok    $shell: the block names the commit that added the test"; else echo "  FAIL  $shell: the block does not name the adding commit"; fails=$((fails+1)); fi
+
+  # ---- Task Integrity 1.1: the approved starting point cannot move undetected ----
+  # Editing baseline_commit to a later commit leaves the body untouched, so brief_sha256 stays happy
+  # while every weakening before that commit vanishes from the comparison. seal_sha256 covers the
+  # approval fields, and a mismatch blocks rather than falling back, because falling back to HEAD is
+  # exactly the outcome the edit was after.
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-1
+  case_ "$shell: an intact seal is not reported as tampering" 0 "$(run $shell verify-on-finish "$p_stop")"
+  weaken_commit
+  moved=$(git -C "$R" rev-parse HEAD)
+  case_ "$shell: the true baseline blocks the committed weakening" 2 "$(run $shell verify-on-finish "$p_stop")"
+  sed "s|^baseline_commit.repo: .*|baseline_commit.repo: $moved|" "$R/working/task-1/brief.md" > "$T/mv" && mv "$T/mv" "$R/working/task-1/brief.md"
+  total=$((total+1)); if grep -q "^baseline_commit.repo: $moved\$" "$R/working/task-1/brief.md"; then echo "  ok    $shell: the sealed baseline was moved to a later commit"; else echo "  FAIL  $shell: the tamper fixture did not apply"; fails=$((fails+1)); fi
+  case_ "$shell: a moved baseline_commit blocks as tampering" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "edited since it was approved" "$T/err"; then echo "  ok    $shell: the block says the approval was edited"; else echo "  FAIL  $shell: the tamper block does not say what happened"; fails=$((fails+1)); fi
+  # the tier is inside the seal, which also closes the one-line edit that removed the Tier 3 contract
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-1 "$SIDA" 3
+  sed 's|^tier: 3$|tier: 2|' "$R/working/task-1/brief.md" > "$T/mv" && mv "$T/mv" "$R/working/task-1/brief.md"
+  case_ "$shell: an edited tier blocks as tampering"     2 "$(run $shell verify-on-finish "$p_stop")"
+  # a review record is workflow data, written later in the task by design: it must NOT read as tampering
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-1 "$SIDA" 3
+  (cd "$R" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" review task-1 waived "the owner said skip it" >/dev/null 2>&1)
+  case_ "$shell: a review recorded after sealing is not tampering" 0 "$(run $shell verify-on-finish "$p_stop")"
+  # a brief sealed before seal_sha256 existed is a legacy seal, not a tampered one: it still measures
+  # from its own baseline, and must not be blocked as though it had been edited
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
+  seal_ task-1
+  grep -v '^seal_sha256:' "$R/working/task-1/brief.md" > "$T/lg" && mv "$T/lg" "$R/working/task-1/brief.md"
+  weaken_commit
+  case_ "$shell: a legacy seal still measures from its baseline" 2 "$(run $shell verify-on-finish "$p_stop")"
+  total=$((total+1)); if grep -q "since the task baseline" "$T/err" && ! grep -q "edited since it was approved" "$T/err"; then echo "  ok    $shell: a legacy seal is not treated as tampering"; else echo "  FAIL  $shell: a legacy seal was treated as tampering"; fails=$((fails+1)); fi
   # Case 3: two sessions, one checkout. Session A sealed before the weakening, session B after it.
   # A must block and B must not, and neither may read the other's brief.
   git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"
@@ -171,9 +212,18 @@ for shell in $shells; do
   printf '../outside/brief.md\n' > "$R/working/active-tasks/$SIDA"
   case_ "$shell: a path outside the project is refused"  0 "$(run $shell verify-on-finish "$p_stop")"
   total=$((total+1)); if grep -q "does not resolve" "$T/out"; then echo "  ok    $shell: the traversal is refused by shape, not by absence"; else echo "  FAIL  $shell: the traversal was followed"; fails=$((fails+1)); fi
-  # a baseline commit that does not exist: HEAD again, with a note
+  # A baseline commit that does not exist HERE: HEAD again, with a note. The brief is sealed in
+  # another checkout of the same name and carried in, which is how this really happens; editing the
+  # commit by hand would now be tampering, and would block instead of falling back.
+  git -C "$R" reset -q --hard "$init"; rm -rf "$R/working"; mkdir -p "$R/working/active-tasks"
+  O="$T/elsewhere/repo"; rm -rf "$T/elsewhere"; mkdir -p "$O/tests"
+  git -C "$O" init -q; git -C "$O" config core.autocrlf false
+  printf 'working/\n' > "$O/.gitignore"; printf 'test("o", () => { expect(1).toBe(1); });\n' > "$O/tests/o.test.js"
+  git -C "$O" add -A; git -C "$O" -c user.email=t@t -c user.name=t commit -qm elsewhere 2>/dev/null
+  mkdir -p "$O/working/task-1"; printf '# brief task-1\n' > "$O/working/task-1/brief.md"
+  (cd "$O" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal task-1 2 >/dev/null 2>&1)
+  mkdir -p "$R/working/task-1"; cp "$O/working/task-1/brief.md" "$R/working/task-1/brief.md"
   printf 'working/task-1/brief.md\n' > "$R/working/active-tasks/$SIDA"
-  awk '/^baseline_commit\.repo: /{print "baseline_commit.repo: 0123456789abcdef0123456789abcdef01234567"; next} {print}' "$R/working/task-1/brief.md" > "$T/b.tmp" && mv "$T/b.tmp" "$R/working/task-1/brief.md"
   case_ "$shell: nonexistent baseline commit falls back to HEAD" 0 "$(run $shell verify-on-finish "$p_stop")"
   total=$((total+1)); if grep -q "does not exist" "$T/out"; then echo "  ok    $shell: the fallback is announced"; else echo "  FAIL  $shell: no fallback note"; fails=$((fails+1)); fi
   rm -rf "$R/working/relay"

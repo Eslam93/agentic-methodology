@@ -12,8 +12,16 @@
 #
 # seal writes front matter at the top of working/<task>/brief.md, the file the owner approved:
 #
-#   task, approved_at, one baseline_commit.<checkout> per checkout, brief_sha256 (the digest of
-#   the body below the front matter), pre_existing (a count).
+#   task, approved_at, tier, one baseline_commit.<checkout> per checkout, brief_sha256 (the digest
+#   of the body below the front matter), pre_existing (a count), and seal_sha256 (the digest of all
+#   of those together, in canonical form).
+#
+# Two digests, because there are two ways an approved task can be moved. brief_sha256 answers "is
+# the agreement still the text the owner approved". seal_sha256 answers "is the approved starting
+# point still the approved starting point": without it, editing baseline_commit to a later commit
+# leaves the body untouched, so the body digest stays happy, while every weakening before that
+# commit disappears from what the Stop hook can see. The review fields are deliberately outside
+# seal_sha256: they are written later in the task, by design, and must not invalidate the approval.
 #
 # and then writes working/active-tasks/<session id>, one line holding working/<task>/brief.md.
 # Those two writes are one event: this is the agreement, and this session is now carrying it. The
@@ -61,7 +69,7 @@ dir="$root/working/$task"; brief="$dir/brief.md"
 # The keys this tool owns. Everything else in an existing front matter is kept as it was, but these
 # are stripped and rewritten at seal, so a brief cannot arrive at the agreement already carrying its
 # own review record: only `review` writes one, after the task exists.
-SEAL_KEYS='^(task|approved_at|tier|baseline_commit(\.[^:]*)?|brief_sha256|pre_existing|review_[a-z]+):'
+SEAL_KEYS='^(task|approved_at|tier|baseline_commit(\.[^:]*)?|brief_sha256|pre_existing|seal_sha256|review_[a-z]+):'
 SESSION_RE='^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$'
 
 front_matter() { # the lines between the opening and closing --- , or nothing
@@ -78,6 +86,32 @@ digest_tool() {
   elif command -v shasum >/dev/null 2>&1; then echo "shasum -a 256"; fi
 }
 digest_body() { local t; t=$(digest_tool); [ -n "$t" ] || return 1; body "$1" | $t | cut -d' ' -f1; }
+digest_text() { local t; t=$(digest_tool); [ -n "$t" ] || return 1; $t | cut -d' ' -f1; }
+
+# The immutable approval fields, rendered one way and only one way: a fixed field order, one
+# "key: value" line each with a single space after the colon and the value trimmed, the per-checkout
+# lines sorted by bytes, and a trailing newline. This exact text is what seal_sha256 covers, and
+# both Stop hooks rebuild it the same way; if the three ever disagree by one byte, a valid seal
+# reads as tampered on one platform, which is why the order is fixed here rather than taken from
+# the file. Deliberately NOT the whole front matter: the review fields are written later in the
+# task, by design, and must not invalidate the approval.
+canonical_seal() { # $1: the front matter text
+  local fm="$1" k
+  for k in task approved_at tier; do
+    printf '%s\n' "$fm" | awk -v key="$k:" 'index($0, key)==1 {
+      v = substr($0, length(key)+1); sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v)
+      print key " " v; exit }'
+  done
+  printf '%s\n' "$fm" | awk 'match($0, /^baseline_commit(\.[^:]*)?:/) {
+    k = substr($0, 1, RLENGTH-1); v = substr($0, RLENGTH+1)
+    sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v)
+    print k ": " v }' | LC_ALL=C sort
+  for k in brief_sha256 pre_existing; do
+    printf '%s\n' "$fm" | awk -v key="$k:" 'index($0, key)==1 {
+      v = substr($0, length(key)+1); sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v)
+      print key " " v; exit }'
+  done
+}
 
 fm=$(front_matter "$brief")
 sealed=0; printf '%s\n' "$fm" | grep -Eq '^baseline_commit(\.[^:]*)?:' && sealed=1
@@ -115,14 +149,19 @@ case "$cmd" in
     n=$(wc -l < "$pre.tmp" | tr -d ' ')
     when=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     kept=$(printf '%s\n' "$fm" | grep -Ev "$SEAL_KEYS" | grep -v '^$')
+    # The approval block, in canonical order, written exactly as canonical_seal renders it, so the
+    # file on disk and the bytes behind the digest are the same thing and can be checked by eye.
+    approval="task: $task
+approved_at: $when
+tier: $arg3
+$(printf '%s\n' "${lines[@]}" | LC_ALL=C sort)
+brief_sha256: $sum
+pre_existing: $n"
+    sealsum=$(printf '%s\n' "$approval" | digest_text) || die "could not digest the approval block"
     {
       echo "---"
-      echo "task: $task"
-      echo "approved_at: $when"
-      echo "tier: $arg3"
-      printf '%s\n' "${lines[@]}"
-      echo "brief_sha256: $sum"
-      echo "pre_existing: $n"
+      printf '%s\n' "$approval"
+      echo "seal_sha256: $sealsum"
       [ -n "$kept" ] && printf '%s\n' "$kept"
       echo "---"
       body "$brief"
@@ -202,6 +241,24 @@ review_at: $when" ;;
     have=$(digest_body "$brief") || die "neither sha256sum nor shasum on PATH"
     if [ "$want" = "$have" ]; then echo "brief unchanged since approval"
     else echo "BRIEF CHANGED since approval: sealed $want, now $have"; bad=1; fi
+    # The body digest above answers "is the agreement still the agreed text". This one answers the
+    # other half: "is the approved starting point still the approved starting point". Without it,
+    # moving baseline_commit to a later commit leaves the body digest happy and quietly deletes
+    # every weakening before the new commit from what the Stop hook can see.
+    wantseal=$(printf '%s\n' "$fm" | grep -E '^seal_sha256:' | head -1 | awk '{print $NF}')
+    if [ -z "$wantseal" ]; then
+      echo "seal digest ABSENT: this brief was sealed before seal_sha256 existed, so its approval fields are not integrity-checked"
+    else
+      haveseal=$(canonical_seal "$fm" | digest_text) || die "neither sha256sum nor shasum on PATH"
+      if [ "$wantseal" = "$haveseal" ]; then echo "seal intact: the approved starting point has not been edited"
+      else
+        echo "SEAL TAMPERED: the approval fields have been edited since sealing (sealed $wantseal, now $haveseal)."
+        echo "  One of task, approved_at, tier, baseline_commit, brief_sha256, or pre_existing has changed."
+        echo "  A seal does not move. Restore the sealed values from git or from the owner's record, or"
+        echo "  agree a new task and seal a new brief beside this one."
+        bad=1
+      fi
+    fi
     while IFS= read -r line; do
       rest="${line#baseline_commit.}"; sha="${rest##* }"; name="${rest% *}"; name="${name%:}"
       repo=""; for r in "${repos[@]}"; do [ "$(basename "$r")" = "$name" ] && repo="$r"; done

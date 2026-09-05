@@ -16,8 +16,15 @@
 #     weakened test is committed (measured 2026-09-05);
 #   - renames are detected (-M), so a staged git mv plus a removed assertion is compared old path
 #     to new path;
-#   - a test added during the task has no version at the baseline, so it is compared against HEAD,
-#     as it was before the baseline existed.
+#   - a test added during the task has no version at the baseline, so it is compared against the
+#     commit that first added it during the task; comparing against HEAD would see nothing once the
+#     weakening was itself committed. With no baseline, or when the file was staged and never
+#     committed, HEAD is the only earlier version and is used.
+# It also refuses to run on a moved seal: baseline.sh records seal_sha256 over the approval fields,
+# and if that no longer matches, the recorded starting point has been edited since approval. That
+# blocks (exit 2) rather than falling back, because falling back to HEAD is the outcome such an
+# edit is after. A brief with no seal_sha256 at all was sealed before this existed and is treated
+# as a legacy seal, not as tampering.
 # Fallback, never a block, and never a guess at which task is active: no session id, no pointer, a
 # pointer that does not resolve, a brief with no seal, or a seal that does not name this checkout,
 # and the comparison is against HEAD as it was before this mechanism. A sealed commit rewritten by
@@ -83,6 +90,66 @@ if [ -n "$briefFile" ]; then
   fi
 fi
 
+# ---- is the approved starting point still the approved one? --------------------------------
+# Rendered byte for byte as baseline.sh renders it: fixed field order, one "key: value" line with a
+# single space, values trimmed, per-checkout lines sorted by bytes, trailing newline. The review
+# fields are outside it on purpose, because they are written later in the task.
+digest_tool() {
+  if command -v sha256sum >/dev/null 2>&1; then echo "sha256sum"
+  elif command -v shasum >/dev/null 2>&1; then echo "shasum -a 256"; fi
+}
+canonical_seal() { # $1: the front matter text
+  local fm="$1" k
+  for k in task approved_at tier; do
+    printf '%s\n' "$fm" | awk -v key="$k:" 'index($0, key)==1 {
+      v = substr($0, length(key)+1); sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v)
+      print key " " v; exit }'
+  done
+  printf '%s\n' "$fm" | awk 'match($0, /^baseline_commit(\.[^:]*)?:/) {
+    k = substr($0, 1, RLENGTH-1); v = substr($0, RLENGTH+1)
+    sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v)
+    print k ": " v }' | LC_ALL=C sort
+  for k in brief_sha256 pre_existing; do
+    printf '%s\n' "$fm" | awk -v key="$k:" 'index($0, key)==1 {
+      v = substr($0, length(key)+1); sub(/^[ \t]+/, "", v); sub(/[ \t\r]+$/, "", v)
+      print key " " v; exit }'
+  done
+}
+if [ -n "$briefFile" ]; then
+  want=$(printf '%s\n' "$fm" | awk 'index($0, "seal_sha256:")==1 {print $NF; exit}')
+  if [ -n "$want" ]; then
+    tool=$(digest_tool)
+    if [ -z "$tool" ]; then
+      echo "note from verify-on-finish: no sha256 tool on PATH, so the seal in $briefName was not checked."
+    elif [ "$want" != "$(canonical_seal "$fm" | $tool | cut -d' ' -f1)" ]; then
+      # A brief with no seal digest was sealed before this existed: that is an absent legacy seal
+      # and keeps the old path. A digest that does not match is a different thing entirely. The
+      # comparison base itself may have been moved, so falling back to HEAD would hand the edit
+      # exactly what it was after: every weakening before the new commit disappearing. There is no
+      # safe base left, so the turn stops here and a person decides.
+      {
+        echo "STOP: the sealed approval in $briefName has been edited since it was approved."
+        echo
+        echo "  seal_sha256 does not match the approval fields now in the brief. One of task,"
+        echo "  approved_at, tier, baseline_commit, brief_sha256, or pre_existing has changed."
+        echo
+        echo "This is not the same as a task with no baseline. The recorded starting point is what"
+        echo "every test comparison in this session is measured from, so a moved baseline can hide"
+        echo "a weakening rather than merely lose the protection. Comparing against HEAD instead"
+        echo "would be exactly the outcome the edit produces, so this turn stops."
+        echo
+        echo "Do one of these, then finish:"
+        echo "  - restore the sealed values from git or from the owner's record; or"
+        echo "  - if the agreement really changed, say so to the owner, write a new brief under"
+        echo "    working/<new-task>/ and seal that one, leaving this approval readable beside it."
+        echo
+        echo "  bash .claude/tools/baseline.sh check ${briefName#working/}" | sed 's|/brief.md||'
+      } >&2
+      exit 2
+    fi
+  fi
+fi
+
 is_test_file() { printf '%s' "$1" | grep -Eiq '(\.test\.|\.spec\.|Tests?\.cs$|(^|/)(tests?|__tests__)/)'; }
 # Word boundaries, so that submit( and protest( are not counted as test( and it(, and so that this
 # counter agrees with the PowerShell twin, which has always had them.
@@ -134,9 +201,19 @@ for repo in "${repos[@]}"; do
       R*) { is_test_file "$file" || is_test_file "$file2"; } || continue
           compare "$repo" "$base" "$name/$file -> $file2 (renamed)" "$file" "$file2" "$since" ;;
       A*) is_test_file "$file" || continue
-          # added during the task: its only earlier version is the one committed since the baseline
-          git -C "$repo" cat-file -e "HEAD:$file" 2>/dev/null || continue
-          compare "$repo" "HEAD" "$name/$file (added during the task)" "$file" "$file" "HEAD" ;;
+          # A test that did not exist at the baseline was introduced during this task, so there is
+          # no baseline version to compare against. Comparing against HEAD catches a weakening that
+          # is still uncommitted, and nothing else: once the weakening is committed, HEAD is the
+          # weakened version and the two sides are identical (measured 2026-09-05). So compare
+          # against the version at the commit that first added the file during this task.
+          first=$(git -C "$repo" log --diff-filter=A --reverse --format=%H "$base..HEAD" -- "$file" 2>/dev/null | head -1)
+          if [ -n "$first" ]; then
+            compare "$repo" "$first" "$name/$file (added during the task)" "$file" "$file" \
+              "${first:0:7}, the commit that added it during this task"
+          elif git -C "$repo" cat-file -e "HEAD:$file" 2>/dev/null; then
+            # staged but never committed, or no task baseline: HEAD is the only earlier version
+            compare "$repo" "HEAD" "$name/$file (added during the task)" "$file" "$file" "HEAD"
+          fi ;;
     esac
   done <<< "$status"
 done
