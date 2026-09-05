@@ -34,7 +34,7 @@ Closes only with a second adopter or a second machine. Cost: unknown; not in the
 
 | Unknown | Page it limits |
 |---|---|
-| Whether any skill helps, by comparison. The source installation recorded the same limit: no skill in it had been shown by comparison to help | every skill |
+| Whether any skill helps, by comparison. The source installation recorded the same limit: no skill in it had been shown by comparison to help. A source-level comparison with nine other harnesses exists since 2026-09-05 (`../_readings/harness-benchmark-2026-09-05.md`); it settles what each tree can enforce, not whether any of it helps | every skill |
 | Whether the install works on macOS. Linux is partly closed: CI on `ubuntu-latest` passed `verify.sh`, the canary, and the bash hook cases on 2026-09-05; the installer itself has not run there | `decisions.md`, D-03 |
 | Whether a shape-B workspace installs cleanly with this kit. Shape B was derived from a shape-C installation and never run as B | `decisions.md`, D-02 |
 
@@ -45,7 +45,7 @@ Closes with an afternoon of reading. Cost: low, but it was deferred in v1 and is
 | Unknown | Page it limits |
 |---|---|
 | The research citations behind the v1 thesis were re-checked by two reviewers in 2026-06 and never by the owner | `_readings/evidence-base.md` |
-| The harness-standards facts were measured on another estate in 2026-08 and not re-measured here | `_readings/harness-standards-2026-08.md` |
+| The harness-standards facts were measured on another estate in 2026-08 and not re-measured here. One is already contradicted: the desktop app carried an official plugin marketplace cache dated 2026-09-02 and its documentation describes plugin install (`../_readings/claude-code-docs-2026-09-05.md`), so "no plugin surface" no longer holds and D-03 rests on it | `_readings/harness-standards-2026-08.md`, `decisions.md` D-03 |
 
 ## Root cause D · not surveyed
 
@@ -53,3 +53,16 @@ Closes with an afternoon of reading. Cost: low, but it was deferred in v1 and is
 |---|---|
 | The standalone communication-modes pack still carries persistent-mode wording. Whether it should be deleted or aligned was never decided | `99-pending.md` |
 | The project memories on the owner's other repositories, 84 notes on one of them, were never promoted or pruned | `99-pending.md` |
+
+## Root cause E · the benchmark of 2026-09-05 read code and ran nothing
+
+Closes with a live probe session, a second machine, and paid runs; the full list with costs is
+on `../_investigations/2026-09-05-benchmark/methodology.md`. Cost: a day or two in total.
+
+| Unknown | Page it limits |
+|---|---|
+| Whether the current Claude Code honours the hook shapes the studied trees declare: a non-2 non-zero exit, an `ask` under `bypassPermissions`, a `PreCompact` block, an agent-type hook's deny, a plugin-shipped settings file | every "can stop" sentence on the benchmark page |
+| Whether the `Edit\|Write` matcher fires on `MultiEdit` and `NotebookEdit`, and so whether `guard-secrets` has a silent hole | `_readings/external-review-2026-09-05.md`, new finding 3 |
+| The Stop hook's two blind spots, a committed weakening and a staged rename, have never been exercised by a test | the same page, R1 and new finding 1 |
+| Any token or time cost of any harness, this kit included; every "always loaded" figure is a line count | the benchmark page's ceremony row |
+| Any behavioural effect of any harness; nothing was run with and without one | the same limit as root cause B, now measured against nine others |
