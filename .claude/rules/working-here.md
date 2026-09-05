@@ -67,3 +67,7 @@ search for the same root cause. Same cause with a different symptom means merge,
   `timeout` is in seconds. The first character of stdout decides how output is parsed, so keep it
   quiet. Normalise path separators before matching file paths. Hooks do not hot-reload: restart the
   session after changing one. 2026-08.
+- **A path-scoped rule does not load for a shell read or a shell edit.** `cat`, `grep`, and `awk` on
+  a file under `docs/knowledge-base/` left `knowledge-base.md` out of context for a whole turn; the
+  `Read` tool on the same file brought it in at once. A session that prefers the shell writes
+  knowledge-base pages without the rule that says how. Open one page with `Read` first. 2026-09-05.

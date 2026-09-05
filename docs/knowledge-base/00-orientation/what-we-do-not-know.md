@@ -12,15 +12,16 @@ reverify_when: After each phase of the v2 plan
 
 ## Root cause A · parts of the harness have not run in a fresh session
 
-Closed in part by Phase 4 on 2026-09-05; see `../_investigations/2026-09-05-v2-rewrite/acceptance.md`.
-What remains needs a session started after the install, which this build's session could not be.
+Closed in part by Phase 4 on 2026-09-05 and by a session started after the install on the same
+day; see `../_investigations/2026-09-05-v2-rewrite/acceptance.md`. What remains needs a command
+only a human types: `/compact`, `/goal`, `/board`.
 
 | Unknown | State on 2026-09-05 | Page it limits |
 |---|---|---|
-| Do the always-loaded rules load in a fresh session, and answer a question without a file read? | not run; the session that built them started before they existed | `start-here.md`, fact 5 |
-| Does a rule with a `paths:` block stay out of context until a matching file is touched? Field reports of silent failure exist | not run, same reason | `decisions.md`, D-03 |
-| Does `/goal <condition>` behave as documented, a separate evaluator re-checking after every turn? | not run; a user-typed command the assistant cannot issue | `decisions.md`, D-04 |
-| Does the `resume-brief` hook put the brief back after a real compaction? | fired by hand only; no compaction occurred in the build session | `decisions.md`, D-04 |
+| Do the always-loaded rules load in a fresh session, and answer a question without a file read? | verified in the weak form: in a session started after the install, the rules were in context before the first tool call and the standing orders were answered from them; the owner's question-first protocol was not run | closed |
+| Does a rule with a `paths:` block stay out of context until a matching file is touched? Field reports of silent failure exist | verified: absent through a whole turn of shell reads and a shell edit under `docs/knowledge-base/`, present the moment a page there was opened with the `Read` tool. The silent failure is real for a shell-only session; `working-here.md` carries the trap | closed |
+| Does `/goal <condition>` behave as documented, a separate evaluator re-checking after every turn? | not run; a user-typed command the assistant cannot issue. The failing tree it needs was prepared; the acceptance page has the command | `decisions.md`, D-04 |
+| Does the `resume-brief` hook put the brief back after a real compaction? | fired by hand only; no compaction occurred in the build session or in the fresh session, where the brief it needs was written for the owner's `/compact` | `decisions.md`, D-04 |
 | Do `PreToolUse` hooks fire on the desktop app? | verified live: the secret guard blocked a real write and allowed the false-positive case | closed |
 | Does the `Stop` hook fire live? | verified: weakening a committed test and ending the turn blocked the stop with the file named and the assertion count; the loop guard held on the second attempt | closed |
 | Does `verify.sh` fail when it should? | verified: the canary fails, a removed hook fails the pair check with the file named, 200 padding lines fail the budget | closed |
