@@ -32,7 +32,7 @@ Closes only with a second adopter or a second machine. Cost: unknown; not in the
 | Unknown | Page it limits |
 |---|---|
 | Whether any skill helps, by comparison. The source installation recorded the same limit: no skill in it had been shown by comparison to help | every skill |
-| Whether the install works on macOS or Linux. Every measurement so far is Windows, Git Bash and PowerShell | `decisions.md`, D-03 |
+| Whether the install works on macOS. Linux is partly closed: CI on `ubuntu-latest` passed `verify.sh`, the canary, and the bash hook cases on 2026-09-05; the installer itself has not run there | `decisions.md`, D-03 |
 | Whether a shape-B workspace installs cleanly with this kit. Shape B was derived from a shape-C installation and never run as B | `decisions.md`, D-02 |
 
 ## Root cause C · sources not independently re-verified

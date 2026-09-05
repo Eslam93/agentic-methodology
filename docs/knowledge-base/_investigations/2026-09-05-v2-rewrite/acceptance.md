@@ -37,6 +37,15 @@ reverify_when: On a Claude Code version change, after any hook or verify.sh chan
 | 16 | `/goal` with the verify command keeps checking after each turn | **not run** | a command only a human types; the assistant cannot issue it |
 | 17 | `/board` told to "just close it" proposes and stops | **not run** | the skill carries `disable-model-invocation`, so the assistant cannot invoke it on itself; the owner runs it against a real item |
 
+## CI on GitHub, the first run outside Windows
+
+Measured 2026-09-05 after the push of `81f684f`: two `verify` workflow runs, one for the branch
+push and one for the tag push, both `completed / success` on `ubuntu-latest` (run 33952964775 for
+the branch). All three steps passed: `verify.sh`, the canary failing as it must, and
+`hooks.test.sh` in its bash cases only, since no PowerShell exists there. This is the kit's first
+run on Linux and its first run on a machine other than the owner's. Not checked: macOS, and any
+step that needs PowerShell.
+
 ## What the owner runs next, in a fresh session on this repository
 
 1. Ask, before any file is read: *"what are the three habits, and what is the hard floor?"* The

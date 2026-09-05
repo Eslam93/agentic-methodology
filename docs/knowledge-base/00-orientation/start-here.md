@@ -76,5 +76,5 @@ kit's own.
 
 No application code. No system map beyond the directory tree and the table in `README.md`; the kit
 is its own map. The CI workflow in `.github/workflows/verify.yml` runs `verify.sh`, its canary, and
-the hook tests on every push; it had not yet run on GitHub at the commit that wrote this line,
-because the v1 and v2 commits were still unpushed (see `99-pending.md`).
+the hook tests on every push; its first run, on 2026-09-05 after the push of `81f684f`, passed on
+Linux (see the acceptance page).

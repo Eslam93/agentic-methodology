@@ -6,7 +6,6 @@ This is the index of what is open, not the evidence for it.
 
 ## 1 · Only the owner can answer these
 
-- `?` The v1 commits from v1.2 through v1.5.1 were never pushed: the remote's last push was 2026-06-23, measured 2026-09-05 with `gh api`. Push before or with v2? Evidence: `_investigations/2026-09-05-v2-rewrite/methodology.md`.
 - `?` The standalone `communication-modes` repository still uses persistent-mode wording, and v2 deletes the modes altogether. Delete it, archive it, or leave it. Evidence: `decisions.md` S-08.
 
 ## 2 · Needs a decision
