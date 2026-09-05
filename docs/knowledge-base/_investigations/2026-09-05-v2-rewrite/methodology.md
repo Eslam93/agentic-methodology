@@ -83,6 +83,17 @@ The "hooks do not hot-reload" advice from other installations did not hold for a
 Restarting after a hook change remains the safe instruction. This row records that the reload
 happened, not that it is guaranteed.
 
+## Codex CLI facts
+
+Measurement, 2026-09-05, `codex --version` reporting `codex-cli 0.144.3`, from `codex exec --help`
+and `codex exec resume --help`. Verified: the flags the `/codex-relay` skill relies on exist.
+`exec --sandbox <read-only|workspace-write|danger-full-access>` selects the sandbox policy;
+`--skip-git-repo-check` exists; `exec resume [SESSION_ID] [PROMPT]` resumes a session by id or
+thread name, or the most recent with `--last`; `--dangerously-bypass-approvals-and-sandbox` exists
+and is the flag the skill forbids. Not checked: no relay was run against a live session in this
+build, so the stdin prompt path (`-`) and the read-only sandbox's behaviour on a real review are
+carried over from v1's measurements, not re-measured.
+
 ## Claude Code documentation facts
 
 Read from the official documentation by a research subagent on 2026-09-05; none exercised here:

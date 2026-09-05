@@ -11,7 +11,6 @@ This is the index of what is open, not the evidence for it.
 
 ## 2 · Needs a decision
 
-- `?` Retire `~/.claude/commands/codex-relay.md` and `explain.md` once the kit's skills replace them, in Phase 6 of the plan, so one name does not resolve twice.
 - `?` Whether `/document` and `/walkthrough` from the fresher installation join the kit. Not shipped in v2.0; add when a real use appears.
 - `?` `production-audit` from `ecc` 2.2.1 as an optional review-menu item in production posture. Read, not evaluated.
 

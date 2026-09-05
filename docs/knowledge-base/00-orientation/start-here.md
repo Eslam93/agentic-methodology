@@ -41,10 +41,10 @@ kit's own.
 
 2. **v2 is being built in six phases, one commit each, on `main`.** Phase 1 (the skeleton, this
    knowledge base, the deletions) landed at `277486a`, Phase 2a (rules, hooks, tools) at
-   `0791482`, Phase 2b (the ten skills) at `0112d1e`, and Phase 3 (the entry documents and CI) at
-   the commit that updated this line. Phases 4 to 6 (acceptance, the example pointer, close-out)
-   were open at that commit. The plan lives in the owner's disposable `working/` folder while the
-   work is in flight; the decisions it implements are in [`../decisions.md`](../decisions.md).
+   `0791482`, Phase 2b (the ten skills) at `0112d1e`, Phase 3 (the entry documents and CI) at
+   `c8249d8`, Phase 4 (acceptance) at `78ca5d5` and `d158d57`, and Phase 6 (close-out, with this
+   repository's own project rule) at the commit tagged `v2.0.0`. Phase 5 became a decision, D-15.
+   The decisions the plan implemented are in [`../decisions.md`](../decisions.md).
 
 3. **The harness is derived from three real installations, not designed on paper.** One is the
    owner's public site, shape A, in daily use since 2026-08. Two are consultancy workspaces,
