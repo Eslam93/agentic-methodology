@@ -39,11 +39,12 @@ kit's own.
    document, an escape log, a promotion ledger, a memory system, and a communication layer. All of
    that is the documentation layer v2 deletes.
 
-2. **v2 is being built in six phases, one commit each, on `main`.** At the commit that introduced
-   this page, Phase 1 (the skeleton, this knowledge base, the deletions) was the only phase
-   committed. The harness itself did not yet exist in the tree. The plan lives in the owner's
-   disposable `working/` folder while the work is in flight; the decisions it implements are in
-   [`../decisions.md`](../decisions.md).
+2. **v2 is being built in six phases, one commit each, on `main`.** Phase 1 (the skeleton, this
+   knowledge base, the deletions) landed at `277486a`, Phase 2a (rules, hooks, tools) at
+   `0791482`, Phase 2b (the ten skills) at `0112d1e`, and Phase 3 (the entry documents and CI) at
+   the commit that updated this line. Phases 4 to 6 (acceptance, the example pointer, close-out)
+   were open at that commit. The plan lives in the owner's disposable `working/` folder while the
+   work is in flight; the decisions it implements are in [`../decisions.md`](../decisions.md).
 
 3. **The harness is derived from three real installations, not designed on paper.** One is the
    owner's public site, shape A, in daily use since 2026-08. Two are consultancy workspaces,
@@ -73,5 +74,7 @@ kit's own.
 
 ## What is deliberately not here
 
-No application code. No CI until Phase 3. No system map: the kit's own map is its directory tree,
-kept in `START-HERE.md` once Phase 3 lands.
+No application code. No system map beyond the directory tree and the table in `README.md`; the kit
+is its own map. The CI workflow in `.github/workflows/verify.yml` runs `verify.sh`, its canary, and
+the hook tests on every push; it had not yet run on GitHub at the commit that wrote this line,
+because the v1 and v2 commits were still unpushed (see `99-pending.md`).

@@ -46,7 +46,9 @@ case "$(uname -s 2>/dev/null)" in
   MINGW*|MSYS*|CYGWIN*|Windows_NT) runner='powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/hooks/%s.ps1\"' ;;
   *)                               runner='bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/%s.sh\"' ;;
 esac
-hook() { printf "$runner" "$1"; }
+# Substitute, never use the runner as a printf format: printf would turn the \" that JSON needs
+# into a bare quote and the generated settings.json would not parse (found 2026-09-05).
+hook() { printf '%s' "${runner//%s/$1}"; }
 settings=$(cat <<EOF
 {
   "hooks": {

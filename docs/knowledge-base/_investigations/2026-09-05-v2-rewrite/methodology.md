@@ -67,6 +67,11 @@ skills wrapping CLIs and REST APIs.
 | what it caught | a test-script line carrying a connection string with a server field and a password field on one line. The false-positive cases, a `const password = process.argv[2]` line and a token-shape description, were not blocked |
 | a false positive it produced | prose describing those two field names on one line, in a knowledge-base edit. Fixed the same day by excluding whitespace and backticks from the password value class; a real connection-string password has neither |
 
+Skills hot-load on this build as well: the `record` skill, written to `.claude/skills/record/`
+during the session on 2026-09-05, appeared in the session's available-skills list on the next turn
+without a restart. Skills marked `disable-model-invocation: true` did not appear in that list,
+which is the documented behaviour for them.
+
 A negative result from the same session: the source installations set `MSYS_NO_PATHCONV=1` in
 `settings.json` to stop MSYS rewriting `gh api /repos/...` and `cmd /c`. With it set, measured
 2026-09-05 in Git Bash: `git -C /d/SourceCode/methodology log -1` fails with "cannot change to:

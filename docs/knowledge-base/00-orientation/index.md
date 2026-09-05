@@ -42,7 +42,7 @@ reverify_when: Every time a page is added, superseded, or removed
 | `10-access/` | one owner with full access; nothing is blocked by a missing credential |
 | `20-system/` | the kit has no runtime system; its map is the directory tree in `START-HERE.md` from Phase 3 |
 | `30-infrastructure/` | nothing is deployed |
-| `40-operations/` | no CI until Phase 3; a runbook page follows if the release process earns one |
+| `40-operations/` | the operations are `verify.sh`, its canary, and the CI workflow that runs them, all self-describing; a runbook page follows if the release process earns one |
 | `50-incidents/` | no incident on this repository yet. Incidents from the source installations stay in their own bases |
 | `60-design/` | no design source |
 | `80-governance/` | the rules under `.claude/rules/` are the governance; duplicating them here would be the drift v2 exists to remove |

@@ -1,0 +1,31 @@
+# The harness verifies itself on every push and pull request. Three jobs in one:
+#   1. verify.sh must pass
+#   2. verify.sh --canary must FAIL, or the runner is lying and its greens are void
+#   3. every hook must fire and block when it should (the bash versions on Linux)
+# Copy this file into an adopting repository's .github/workflows/ so a stale or broken harness
+# cannot merge. The project's own checks belong in .claude/tools/verify.project.sh, run by --full.
+name: verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: verify.sh
+        run: bash .claude/tools/verify.sh
+
+      - name: the canary must fail
+        run: |
+          if bash .claude/tools/verify.sh --canary; then
+            echo "the canary passed: this runner cannot report a failure, so nothing above counts"
+            exit 1
+          fi
+          echo "the canary failed, as it must"
+
+      - name: hooks fire and block
+        run: bash .claude/tools/verify.sh --hooks
