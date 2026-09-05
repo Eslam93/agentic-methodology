@@ -22,7 +22,7 @@ What remains needs a session started after the install, which this build's sessi
 | Does `/goal <condition>` behave as documented, a separate evaluator re-checking after every turn? | not run; a user-typed command the assistant cannot issue | `decisions.md`, D-04 |
 | Does the `resume-brief` hook put the brief back after a real compaction? | fired by hand only; no compaction occurred in the build session | `decisions.md`, D-04 |
 | Do `PreToolUse` hooks fire on the desktop app? | verified live: the secret guard blocked a real write and allowed the false-positive case | closed |
-| Does the `Stop` hook fire live? | the last act of the build session weakened a committed test and ended the turn; the result is on the acceptance page | `start-here.md`, fact 5 |
+| Does the `Stop` hook fire live? | verified: weakening a committed test and ending the turn blocked the stop with the file named and the assertion count; the loop guard held on the second attempt | closed |
 | Does `verify.sh` fail when it should? | verified: the canary fails, a removed hook fails the pair check with the file named, 200 padding lines fail the budget | closed |
 
 ## Root cause B · one person, one machine

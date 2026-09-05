@@ -6,7 +6,7 @@ last_verified: 2026-09-05
 verification_method: Each test in START-HERE.md section 7 was run from the session that built the kit, at commit c8249d8 plus the working tree that became the Phase 4 commit, in Git Bash and PowerShell 5.1 on Windows. Commands and outputs are quoted below
 scope: The kit on this repository (shape A) and on two scratch installs (shape A and shape B) under the owner's temp folder. Not a second machine
 confidence: High for every row marked passed or failed; the outputs were read, not inferred. The five rows marked not run are exactly that
-known_gaps: Tests 1, 2, 15, 16, and 17 need a session started after the install, a real compaction, or a command only a human can type. Test 5 was run as the last act of the build session; its result is in the follow-up commit named below
+known_gaps: Tests 1, 2, 15, 16, and 17 need a session started after the install, a real compaction, or a command only a human can type
 reverify_when: On a Claude Code version change, after any hook or verify.sh change, and on the first run on macOS or Linux
 ---
 
@@ -23,7 +23,7 @@ reverify_when: On a Claude Code version change, after any hook or verify.sh chan
 | 2 | touching a knowledge-base file brings the path-scoped rule into context | **not run** | same reason |
 | 3 | a fake, well-formed token written through the editing tool is blocked | **passed, live** | the secret guard blocked a real `Write` in the build session with exit 2 and named the kind, not the value. Also 12 of 12 hand-fired cases in `hooks.test.sh` |
 | 4 | `const password = process.argv[2]` is not blocked | **passed, live** | written to a scratch file through the editing tool during Phase 4; not blocked. Also by hand in both shells |
-| 5 | delete an assertion from a test file and end a turn; the Stop hook blocks and names the file | **pending, live** | `.claude/tools/stop-hook-canary.test.js` was committed as the fixture, then one `expect` line was removed and the build session ended its turn. The result is recorded in the follow-up commit `test: stop hook live result`. By hand: blocked in both shells, file named, `stop_hook_active` honoured |
+| 5 | delete an assertion from a test file and end a turn; the Stop hook blocks and names the file | **passed, live** | `.claude/tools/stop-hook-canary.test.js` was committed as the fixture, one `expect` line was removed, and the build session ended its turn. The desktop app ran `verify-on-finish.ps1`, which blocked with `STOP: a test was weakened, skipped, or deleted in this change. WEAKENED methodology/.claude/tools/stop-hook-canary.test.js (assertions 3 -> 2)`. The session was re-invoked with that message, restored the file with `git checkout`, and ended normally on the second attempt, so `stop_hook_active` was honoured live as well. By hand: blocked in both shells |
 | 6 | `verify.sh` on a healthy tree | **passed** | `18 passed, 0 failed`, exit 0, on this repository with the fixture present |
 | 7 | break one thing on purpose | **passed** | removing `guard-secrets.sh` in a scratch install: `FAIL every hook ships in both shells: missing a pair for: guard-secrets.ps1`. Appending 200 lines to a rule: `FAIL always-loaded rules within budget: 429 lines across 3 files against a baseline of 400; trim, or raise the baseline deliberately in this script`. Both messages say what to do |
 | 8 | `verify.sh` from another directory and from `/` | **passed** | run from `/tmp` and from `/`: `18 passed, 0 failed` both times |
