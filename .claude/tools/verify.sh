@@ -91,6 +91,35 @@ if [ -f .claude/settings.json ]; then
   fi
 fi
 
+# --- 3b · the required hooks are wired to the right event and matcher ---------------------------
+# The updater manages the hook scripts and settings.json decides whether they ever run, so a hook
+# on disk that nothing calls is not a guard. This reads the wiring the installer writes; it does not
+# rewrite anybody's settings, and a customised file that still carries the four is fine.
+if [ -f .claude/settings.json ] && [ -n "$py" ]; then
+  miss="$("$py" -c 'import json
+s = json.load(open(".claude/settings.json", encoding="utf-8-sig"))
+want = [("PreToolUse", "Edit|Write", "guard-secrets"),
+        ("PreToolUse", "Bash|PowerShell", "guard-commands"),
+        ("Stop", "", "verify-on-finish"),
+        ("SessionStart", "compact", "resume-brief")]
+out = []
+for ev, matcher, name in want:
+    ok = False
+    for entry in s.get("hooks", {}).get(ev, []):
+        if (entry.get("matcher") or "") != matcher:
+            continue
+        for h in entry.get("hooks", []):
+            if name in (h.get("command") or ""):
+                ok = True
+    if not ok:
+        out.append(ev + "/" + (matcher or "-") + " -> " + name)
+print(" ; ".join(out))' 2>/dev/null)"
+  if [ -z "$miss" ]; then ok "the four required hooks are wired to the right event and matcher"
+  else bad "the four required hooks are wired to the right event and matcher" "not wired: $miss . The scripts may be on disk and never called; re-run the installer or add the entries by hand"; fi
+elif [ -f .claude/settings.json ]; then
+  note "no python on PATH; hook wiring not checked"
+fi
+
 # --- 3 · every hook wired in settings.json exists on disk --------------------------------------
 if [ -f .claude/settings.json ]; then
   wired="$(grep -oE '\$\{CLAUDE_PROJECT_DIR\}/[^"\\]+' .claude/settings.json | sed 's|${CLAUDE_PROJECT_DIR}/||' | sort -u)"
@@ -163,7 +192,12 @@ fi
 
 # --- 7 · working/ is ignored and has no remote --------------------------------------------------
 if git check-ignore -q working/probe 2>/dev/null; then ok "working/ contents are ignored"; else bad "working/ contents are ignored" "add 'working/*' and '!working/README.md' to .gitignore"; fi
-if [ -d working/.git ] && [ -n "$(git -C working remote 2>/dev/null)" ]; then bad "working/ has no remote" "it has one; working/ is disposable and must never be published"; else ok "working/ has no remote"; fi
+# A linked worktree carries a .git file, so ask git whether working/ is a checkout ROOT. Asking
+# about a plain subfolder answers about the enclosing repository, which is the trap in
+# working-here.md, so the toplevel it reports has to be working/ itself.
+wt="$(git -C working rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$wt" ] && [ "$(cd working 2>/dev/null && pwd)" = "$(cd "$wt" 2>/dev/null && pwd)" ] \
+   && [ -n "$(git -C working remote 2>/dev/null)" ]; then bad "working/ has no remote" "it has one; working/ is disposable and must never be published"; else ok "working/ has no remote"; fi
 
 # --- 8 · the knowledge base exists and never links into working/ -------------------------------
 kb=""; [ -d docs/knowledge-base ] && kb=docs/knowledge-base; [ -z "$kb" ] && [ -d knowledge-base ] && kb=knowledge-base

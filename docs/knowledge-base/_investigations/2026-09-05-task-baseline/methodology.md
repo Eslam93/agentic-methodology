@@ -364,3 +364,43 @@ The rename follow is bounded at five hops, so a sixth chained rename inside one 
 the last commit it found. Splitting a test created during the task into two files still blocks every
 turn, because the original loses assertions and nothing knows they moved; that is the same friction
 D-17 accepted, and it is in `99-pending.md`.
+
+## The hardening pass of 2026-09-06
+
+Three task-integrity findings the owner raised after reading the pushed tree. All three reproduced
+before anything was changed.
+
+**Linked git worktrees were invisible.** Every checkout test asked whether `.git` was a directory. A
+linked worktree carries a `.git` **file** holding a `gitdir:` pointer, so inside one `baseline.sh`
+refused to run at all ("no .git and no .workspace here") and the Stop hook exited 0 on a weakened
+committed test. Silent, and on the branch layout people reach for when they want isolation.
+
+Detection now asks git: `rev-parse --show-toplevel`, compared against the folder itself, with both
+sides passed through `cd` and `pwd` because git answers in the native form (`C:/...`) while the
+shell works in the MSYS form (`/c/...`) and comparing those as strings never matches on Windows.
+Asking about a plain subfolder correctly answers no, because the toplevel it reports is the
+enclosing repository, which is the trap `working-here.md` already records. Applied to `baseline.sh`,
+`layout.sh`, both Stop hooks, and the `working/` check in `verify.sh`.
+
+The regression creates a real worktree with `git worktree add`, asserts the `.git` file is a file
+and not a directory, seals inside it, and fires both hooks at a weakened committed test there.
+Simulating a worktree by writing a `.git` file would have tested the fixture rather than git.
+
+**The second Stop was an unconditional pass.** `stop_hook_active` means a Stop hook already blocked
+this turn, and the hook exited 0 on it. So the sequence was: block once, carry on, finish with the
+weakening still in place. The deterministic check runs again now, so a weakening still present
+blocks again and a fixed one is allowed. Loop protection is Claude Code's own consecutive-block
+limit, which overrides a Stop hook after eight; it was never this hook's job.
+
+**An unverifiable seal was a note.** With no sha256 tool on PATH the hook printed a note and carried
+on comparing tests. A note on stdout reaches the debug log and nobody else, and a session carrying a
+sealed task whose seal cannot be checked is exactly the state a moved baseline produces. It blocks
+now. A session with no sealed task is unaffected, because there is nothing to verify.
+
+That last one needed a test seam: no PATH on a Git Bash machine carries coreutils without
+`sha256sum`, so `VERIFY_ON_FINISH_NO_DIGEST` forces the branch. It is the same convention as
+`GUARD_COMMANDS_SELFTEST`, which `verify.sh` already uses to prove `guard-commands` can block.
+
+**Not observed live.** None of these three has been seen in a real Claude Desktop session: the
+worktree cases, the second-Stop re-check, and the fail-closed branch are all exercised by the suite
+firing the hooks by hand. That is the same limit every hook on this page carries.

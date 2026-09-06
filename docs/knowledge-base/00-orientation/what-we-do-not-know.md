@@ -25,7 +25,7 @@ each was closed, all on one machine and one Claude Code version.
 | Does `/board` told to close an item propose and stop without writing? | verified: on issue 1 of this repository the turn ended with a proposal and a question, and `gh issue list --state all` afterwards showed the item unchanged; the close was applied only after the owner's yes | closed |
 | Does the `resume-brief` hook put the brief back after a real compaction? | verified: on the owner's `/compact` the hook printed the status file and the brief verbatim into the next turn, and the brief was named from that output without a file read | closed |
 | Do `PreToolUse` hooks fire on the desktop app? | verified live: the secret guard blocked a real write and allowed the false-positive case | closed |
-| Does the `Stop` hook fire live? | verified: weakening a committed test and ending the turn blocked the stop with the file named and the assertion count; the loop guard held on the second attempt | closed |
+| Does the `Stop` hook fire live? | verified 2026-09-05: weakening a committed test and ending the turn blocked the stop with the file named and the assertion count. The second attempt was allowed by the `stop_hook_active` guard, which was removed on 2026-09-06 so the check runs again; that new behaviour has cases but has not been seen live | closed for firing, open for the re-check |
 | Does `verify.sh` fail when it should? | verified: the canary fails, a removed hook fails the pair check with the file named, 200 padding lines fail the budget | closed |
 
 ## Root cause B · one person, one machine
@@ -63,6 +63,5 @@ on `../_investigations/2026-09-05-benchmark/methodology.md`. Cost: a day or two 
 |---|---|
 | Whether the current Claude Code honours the hook shapes the studied trees declare: a non-2 non-zero exit, an `ask` under `bypassPermissions`, a `PreCompact` block, an agent-type hook's deny, a plugin-shipped settings file | every "can stop" sentence on the benchmark page |
 | Whether the `Edit\|Write` matcher fires on `MultiEdit` and `NotebookEdit`, and so whether `guard-secrets` has a silent hole | `_readings/external-review-2026-09-05.md`, new finding 3 |
-| The Stop hook's two blind spots, a committed weakening and a staged rename, have never been exercised by a test | the same page, R1 and new finding 1 |
 | Any token or time cost of any harness, this kit included; every "always loaded" figure is a line count | the benchmark page's ceremony row |
 | Any behavioural effect of any harness; nothing was run with and without one | the same limit as root cause B, now measured against nine others |

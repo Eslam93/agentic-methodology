@@ -50,16 +50,31 @@ cmd="${1:-}"; task="${2:-}"; arg3="${3:-}"
 [ -z "$task" ] && usage
 printf '%s' "$task" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || die "task name must be one plain path segment: letters, digits, dot, dash, underscore"
 
+# Is this the root of a git checkout? A linked worktree carries a .git FILE, not a directory, so
+# testing for a directory made every worktree invisible: seal refused to run and the Stop hook
+# exited 0 on a weakened committed test. Ask git instead. Both sides go through cd and pwd because
+# `rev-parse` answers in the native form (C:/...) while the shell works in the MSYS form (/c/...),
+# and comparing those as strings never matches on Windows. Asking about a plain subfolder correctly
+# says no, because the toplevel it reports is the enclosing repository, not the subfolder.
+is_checkout_root() {
+  local top a b
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ -n "$top" ] || return 1
+  a="$(cd "$1" 2>/dev/null && pwd)" || return 1
+  b="$(cd "$top" 2>/dev/null && pwd)" || return 1
+  [ "$a" = "$b" ]
+}
+
 root="$PWD"
 repos=()
 if [ -f "$root/.workspace" ]; then
   _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   . "$_here/layout.sh"
   while IFS= read -r r; do [ -n "$r" ] && repos+=("$r"); done < <(ws_repos)
-elif [ -d "$root/.git" ]; then
+elif is_checkout_root "$root"; then
   repos=("$root")
 else
-  die "run it from the repository root or the workspace root (no .git and no .workspace here)"
+  die "run it from the repository root, a linked worktree of one, or the workspace root; git does not report this folder as a checkout root and there is no .workspace marker here"
 fi
 [ "${#repos[@]}" -eq 0 ] && die "no git checkout found"
 

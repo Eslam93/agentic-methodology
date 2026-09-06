@@ -75,7 +75,8 @@ codex exec --sandbox read-only - < working/relay/<task>/brief.md                
 ## The delta for code mode
 
 Review only what changed since the relay point: the last relay on this branch, else the task
-baseline commit in `working/<task>/baseline`, else the session start. `git diff --stat <sha>..HEAD`,
+baseline sealed into the active task's brief, the `baseline_commit.<checkout>` line in the front
+matter of the brief `working/active-tasks/<session id>` names, else the session start. `git diff --stat <sha>..HEAD`,
 `git status --porcelain`, `git log --oneline <sha>..HEAD`. State the point you used; "the task
 baseline" always means the sealed commit, never the relay point. An empty delta is a question for
 the owner, not a review.

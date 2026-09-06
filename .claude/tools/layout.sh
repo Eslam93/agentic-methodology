@@ -21,6 +21,21 @@
 # It never returns an empty root: when nothing is found it falls back to the caller's directory
 # and says so with WS_LAYOUT=missing. Branch on that, never on an empty variable.
 
+# Is this the root of a git checkout? A linked worktree carries a .git FILE, not a directory, so
+# testing for a directory made every worktree invisible: seal refused to run and the Stop hook
+# exited 0 on a weakened committed test. Ask git instead. Both sides go through cd and pwd because
+# `rev-parse` answers in the native form (C:/...) while the shell works in the MSYS form (/c/...),
+# and comparing those as strings never matches on Windows. Asking about a plain subfolder correctly
+# says no, because the toplevel it reports is the enclosing repository, not the subfolder.
+is_checkout_root() {
+  local top a b
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ -n "$top" ] || return 1
+  a="$(cd "$1" 2>/dev/null && pwd)" || return 1
+  b="$(cd "$top" 2>/dev/null && pwd)" || return 1
+  [ "$a" = "$b" ]
+}
+
 ws_resolve_layout() {
     local start="${1:-$PWD}"
     WS_ROOT=""
@@ -34,7 +49,7 @@ ws_resolve_layout() {
     [ -z "$WS_ROOT" ] && WS_ROOT="$start"
 
     # 1. shape A
-    if [ -d "$WS_ROOT/.git" ] && [ ! -f "$WS_ROOT/.workspace" ]; then
+    if is_checkout_root "$WS_ROOT" && [ ! -f "$WS_ROOT/.workspace" ]; then
         WS_REPOS="$WS_ROOT"; WS_LAYOUT="single"; return 0
     fi
 
@@ -56,7 +71,7 @@ ws_resolve_layout() {
     for candidate in "$WS_ROOT/repos" "$WS_ROOT" "$WS_ROOT/src" "$WS_ROOT/source" "$WS_ROOT/code" "$WS_ROOT/.."; do
         [ -d "$candidate" ] || continue
         if [ -n "${WS_ANCHOR:-}" ]; then
-            [ -d "$candidate/$WS_ANCHOR/.git" ] || continue
+            is_checkout_root "$candidate/$WS_ANCHOR" || continue
         else
             ls -d "$candidate"/*/.git >/dev/null 2>&1 || continue
         fi
@@ -73,13 +88,13 @@ ws_resolve_layout() {
 }
 
 # Path to one clone, or nothing.
-ws_repo()  { [ -d "$WS_REPOS/$1/.git" ] && printf '%s' "$WS_REPOS/$1"; }
+ws_repo()  { is_checkout_root "$WS_REPOS/$1" && printf '%s' "$WS_REPOS/$1"; }
 
 # Every clone present, one path per line. In shape A, the root itself.
 ws_repos() {
     if [ "${WS_LAYOUT:-}" = "single" ]; then printf '%s\n' "$WS_ROOT"; return; fi
     local d
-    for d in "$WS_REPOS"/*/; do [ -d "$d/.git" ] && printf '%s\n' "${d%/}"; done
+    for d in "$WS_REPOS"/*/; do is_checkout_root "${d%/}" && printf '%s\n' "${d%/}"; done
 }
 
 ws_resolve_layout "$PWD"

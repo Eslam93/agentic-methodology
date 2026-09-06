@@ -105,7 +105,7 @@ a repository.
 |---|---|---|
 | host semantics for a hook exiting non-zero but not 2; an `ask` under `bypassPermissions`; whether `PreCompact` can block; whether an agent-type hook's deny and a plugin-shipped settings file are honoured | one live Claude Code probe session in a scratch project | two to three hours |
 | whether the `Edit\|Write` matcher fires on `MultiEdit` and `NotebookEdit` | the same probe session | included above |
-| this kit's two Stop-hook blind spots have never been exercised | two cases in `hooks.test.sh`: a committed weakening and a `git mv` with a removed assertion | thirty minutes |
+| this kit's two Stop-hook blind spots have never been exercised | two cases in `hooks.test.sh`: a committed weakening and a `git mv` with a removed assertion | thirty minutes. Done on 2026-09-05 by D-17; both cases run in both shells |
 | pull-request review requirements on every default branch | admin-scoped API or the maintainers | not in our hands |
 | every headline effect number in the set (Superpowers "twice as fast", BMAD's A/B, GSD's n=27, the harness's ablation on a non-Claude model) | the raw data, which is in no tree | not in our hands |
 | what a `claude-code-harness` adopter actually receives; its Codex and Grok wiring, on which its own docs disagree | run `setup-existing-project.sh` and `harness gen` in a scratch clone | two hours, needs Codex CLI |

@@ -109,7 +109,11 @@ function Sync-Managed([bool]$Apply, [bool]$Replace) {
         $loc = Get-FileSha256 $destPath
 
         if (-not $old) {
-            if (-not $loc) {
+            if ($wasUnmanaged.ContainsKey($rel) -and $loc) {
+                # Recorded once as the adopter's own. A later release whose bytes happen to match
+                # does not make the path ours: only their removing the file changes that.
+                $script:rUnverified += $rel; $script:manifestBody += "unmanaged $rel"
+            } elseif (-not $loc) {
                 if ($Apply) {
                     if (-not (Install-ManagedFile $srcPath $destPath $up)) { $script:rFailed += $rel; continue }
                     $script:copied++
@@ -269,7 +273,7 @@ function Ensure-Lines([string]$file, [string[]]$lines) {
     $existing = Get-Content $file -ErrorAction SilentlyContinue
     foreach ($l in $lines) { if ($existing -notcontains $l) { [IO.File]::AppendAllText($file, "$l`n", $utf8) } }
 }
-Ensure-Lines (Join-Path $Target '.gitignore') @('working/*', '!working/README.md', '.claude/settings.local.json', 'codex-relay.json')
+Ensure-Lines (Join-Path $Target '.gitignore') @('working/*', '!working/README.md', '.claude/settings.local.json', 'codex-relay.json', '.claude/worktrees/')
 Ensure-Lines (Join-Path $Target '.gitattributes') @('* text=auto eol=lf', '*.md text eol=lf', '*.sh text eol=lf', '*.ps1 text eol=lf', '*.json text eol=lf')
 
 if ($Shape -eq 'A') { $kb = Join-Path $Target 'docs\knowledge-base'; $where = 'inside the repository, under docs/knowledge-base/ (shape A)' }

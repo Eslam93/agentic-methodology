@@ -36,7 +36,11 @@
 # The hook never writes a pointer and never seals anything.
 
 payload=$(cat)
-printf '%s' "$payload" | grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && exit 0
+# stop_hook_active says a Stop hook already blocked this turn. It used to exit 0 here, which meant
+# the second Stop was an unconditional pass: block once, carry on, finish. The deterministic check
+# runs again instead, so a weakening that is still there still blocks and a fixed one is allowed.
+# Loop protection is Claude Code's own consecutive-block limit, which overrides a Stop hook after
+# eight, not this hook waving the second attempt through.
 
 field() { printf '%s' "$payload" | grep -oE "\"$1\"[[:space:]]*:[[:space:]]*\"([^\"\\\\]|\\\\.)*\"" | head -1 | sed 's/^[^:]*:[[:space:]]*"//; s/"$//; s#\\\\#/#g'; }
 cwd=$(field cwd); [ -z "$cwd" ] && cwd="$PWD"
@@ -50,13 +54,27 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
 fi
 
 # ---- where to look -------------------------------------------------------------------------
+# Is this the root of a git checkout? A linked worktree carries a .git FILE, not a directory, so
+# testing for a directory made every worktree invisible: seal refused to run and the Stop hook
+# exited 0 on a weakened committed test. Ask git instead. Both sides go through cd and pwd because
+# `rev-parse` answers in the native form (C:/...) while the shell works in the MSYS form (/c/...),
+# and comparing those as strings never matches on Windows. Asking about a plain subfolder correctly
+# says no, because the toplevel it reports is the enclosing repository, not the subfolder.
+is_checkout_root() {
+  local top a b
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ -n "$top" ] || return 1
+  a="$(cd "$1" 2>/dev/null && pwd)" || return 1
+  b="$(cd "$top" 2>/dev/null && pwd)" || return 1
+  [ "$a" = "$b" ]
+}
 repos=()
 if [ -f "$cwd/.workspace" ]; then
   reposRoot=$(grep -E -e '^WS_REPOS=' "$cwd/.workspace" | head -1 | cut -d= -f2-)
   if [ -n "$reposRoot" ] && [ -d "$reposRoot" ]; then
-    for d in "$reposRoot"/*/; do [ -d "$d/.git" ] && repos+=("${d%/}"); done
+    for d in "$reposRoot"/*/; do is_checkout_root "${d%/}" && repos+=("${d%/}"); done
   fi
-elif [ -d "$cwd/.git" ]; then
+elif is_checkout_root "$cwd"; then
   repos=("$cwd")
 fi
 [ "${#repos[@]}" -eq 0 ] && exit 0
@@ -96,6 +114,10 @@ fi
 # single space, values trimmed, per-checkout lines sorted by bytes, trailing newline. The review
 # fields are outside it on purpose, because they are written later in the task.
 digest_tool() {
+  # The seam exists because no PATH on a Git Bash machine has coreutils without sha256sum, so the
+  # fail-closed branch below could not otherwise be exercised. Same convention as
+  # GUARD_COMMANDS_SELFTEST in guard-commands.sh, which verify.sh uses to prove that hook can block.
+  [ -n "${VERIFY_ON_FINISH_NO_DIGEST:-}" ] && return 0
   if command -v sha256sum >/dev/null 2>&1; then echo "sha256sum"
   elif command -v shasum >/dev/null 2>&1; then echo "shasum -a 256"; fi
 }
@@ -120,7 +142,19 @@ if [ -n "$briefFile" ]; then
   want=$(printf '%s\n' "$fm" | awk 'index($0, "seal_sha256:")==1 {print $NF; exit}')
   tool=$(digest_tool)
   if [ -z "$tool" ]; then
-    echo "note from verify-on-finish: no sha256 tool on PATH, so the seal in $briefName was not checked."
+    # Fail closed. A session carrying a sealed task whose seal cannot be verified is exactly the
+    # state an edited seal produces, and a note on stdout reaches the debug log and nobody else.
+    {
+      echo "STOP: the sealed approval in $briefName cannot be verified here."
+      echo
+      echo "  Neither sha256sum nor shasum is on PATH, so seal_sha256 cannot be recomputed. This"
+      echo "  session is carrying a sealed task, and an unverifiable seal is not the same as no"
+      echo "  task: it is the state a moved baseline would also produce, so it is not waved through."
+      echo
+      echo "Put a sha256 tool on PATH and finish again. On Windows, Git for Windows provides"
+      echo "sha256sum in its usr/bin; on macOS, shasum ships with the system."
+    } >&2
+    exit 2
   else
     # A brief that records a baseline and no digest is not a legacy seal to be trusted: deleting one
     # line would otherwise turn any sealed brief into one, and the baseline could then be moved and

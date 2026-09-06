@@ -194,6 +194,32 @@ has "and it says --update would take it"      "$T/out" "run it again with --upda
 rc=$(install_ --update)
 is "and --update then takes it"               "$(cat "$P/.claude/rules/standing-orders.md")" "rule v2"
 
+echo "an unmanaged path stays unmanaged across releases"
+new_kit; new_proj; install_ >/dev/null
+printf 'collide upstream v1\n' > "$K/.claude/tools/collide.sh"
+printf 'MINE, and I had this path first\n' > "$P/.claude/tools/collide.sh"
+install_ --update >/dev/null
+is "release 1: the collision is preserved"    "$(cat "$P/.claude/tools/collide.sh")" "MINE, and I had this path first"
+has "and recorded unmanaged"                  "$P/$MAN" "unmanaged .claude/tools/collide.sh"
+# release 2: upstream drifts into byte-for-byte agreement with the adopter's file
+printf 'MINE, and I had this path first\n' > "$K/.claude/tools/collide.sh"
+rc=$(install_ --update)
+is "release 2: matching bytes do not claim it" "$(man_hash '.claude/tools/collide.sh')" ""
+has "it is still recorded unmanaged"           "$P/$MAN" "unmanaged .claude/tools/collide.sh"
+# release 3: upstream moves again. The adopter's file must still be theirs.
+printf 'upstream v3, quite different\n' > "$K/.claude/tools/collide.sh"
+rc=$(install_ --update)
+is "release 3: the adopter file is still preserved" "$(cat "$P/.claude/tools/collide.sh")" "MINE, and I had this path first"
+is "and still never claimed"                   "$(man_hash '.claude/tools/collide.sh')" ""
+# and the managed-then-reconciled case must still rejoin, which is a different thing
+printf 'rule v2\n' > "$K/.claude/rules/standing-orders.md"
+install_ --update >/dev/null
+printf 'rule MINE\n' > "$P/.claude/rules/standing-orders.md"
+install_ --update >/dev/null
+printf 'rule v2\n' > "$P/.claude/rules/standing-orders.md"
+install_ --update >/dev/null
+is "a managed file reconciled by hand still rejoins" "$(man_hash '.claude/rules/standing-orders.md')" "$(sha "$K/.claude/rules/standing-orders.md")"
+
 echo "safety - a file the adopter created is never managed"
 new_kit; new_proj; install_ >/dev/null
 mkdir -p "$P/.claude/skills/company-thing"; printf 'ours\n' > "$P/.claude/skills/company-thing/SKILL.md"

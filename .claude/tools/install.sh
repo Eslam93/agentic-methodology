@@ -116,7 +116,13 @@ sync_managed() {
 
     if [ -z "$old" ]; then
       # not managed by any previous installation of this kit
-      if [ -z "$loc" ]; then
+      if was_unmanaged "$rel" && [ -n "$loc" ]; then
+        # Recorded once as the adopter's own. A later release whose bytes happen to match does not
+        # make the path ours: it was theirs, and only their removing the file changes that. Without
+        # this, a collision quietly became managed the first time upstream drifted into agreement,
+        # and the release after that would have overwritten their file.
+        r_unverified="$r_unverified $rel"; printf 'unmanaged %s\n' "$rel" >> "$tmp/manifest.body"
+      elif [ -z "$loc" ]; then
         if [ "$apply" = 1 ]; then
           install_file "$KIT/$rel" "$dest" "$up" || { r_failed="$r_failed $rel"; continue; }
           copied=$((copied+1))
@@ -283,7 +289,7 @@ mkdir -p "$target/working"
 
 # ignore and attribute lines, appended only when absent
 touch "$target/.gitignore" "$target/.gitattributes"
-for line in 'working/*' '!working/README.md' '.claude/settings.local.json' 'codex-relay.json'; do
+for line in 'working/*' '!working/README.md' '.claude/settings.local.json' 'codex-relay.json' '.claude/worktrees/'; do
   grep -qxF -- "$line" "$target/.gitignore" || printf '%s\n' "$line" >> "$target/.gitignore"
 done
 for line in '* text=auto eol=lf' '*.md text eol=lf' '*.sh text eol=lf' '*.ps1 text eol=lf' '*.json text eol=lf'; do

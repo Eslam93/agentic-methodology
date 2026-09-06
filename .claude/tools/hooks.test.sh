@@ -67,7 +67,9 @@ for shell in $shells; do
   case_ "$shell: clean tree allowed"                    0 "$(run $shell verify-on-finish '{"cwd":"'"$cwdv"'","stop_hook_active":false}')"
   printf 'test("a", () => { expect(1).toBe(1); });\n' > "$R/tests/x.test.js"
   case_ "$shell: weakened test blocked"                 2 "$(run $shell verify-on-finish '{"cwd":"'"$cwdv"'","stop_hook_active":false}')"
-  case_ "$shell: weakened but stop_hook_active allowed" 0 "$(run $shell verify-on-finish '{"cwd":"'"$cwdv"'","stop_hook_active":true}')"
+  # stop_hook_active no longer waves the second Stop through: the check runs again, so a weakening
+  # that is still there still blocks. Claude Code's consecutive-block limit is the loop protection.
+  case_ "$shell: weakened, stop_hook_active, blocks again" 2 "$(run $shell verify-on-finish '{"cwd":"'"$cwdv"'","stop_hook_active":true}')"
   git -C "$R" checkout -q -- tests/x.test.js; rm "$R/tests/x.test.js"
   case_ "$shell: deleted test blocked"                  2 "$(run $shell verify-on-finish '{"cwd":"'"$cwdv"'","stop_hook_active":false}')"
   git -C "$R" checkout -q -- tests/x.test.js
@@ -409,6 +411,90 @@ for shell in $shells; do
   check_ "$shell: the fallback never restores the relay brief"                 "$( { said 'MARKER-task-other' && ! said 'MARKER-relay'; } && echo 1 || echo 0)"
   check_ "$shell: the fallback is named as a guess"                            "$( said 'guess' && echo 1 || echo 0)"
   printf 'working/task-1/brief.md\n' > "$W/working/active-tasks/$SIDA"
+done
+
+# ---- linked git worktrees ----------------------------------------------------------------------
+# A linked worktree carries a .git FILE, not a directory. Detecting a checkout by testing for a
+# directory made every worktree invisible: seal refused to run, and the Stop hook exited 0 on a
+# weakened committed test, which is the silent version of no protection at all. A real worktree is
+# created here; simulating one by writing a .git file would test the fixture, not git.
+echo "linked git worktrees"
+WT="$T/wtmain"; mkdir -p "$WT/tests"
+git -C "$WT" init -q 2>/dev/null
+git -C "$WT" config core.autocrlf false
+printf 'working/\n' > "$WT/.gitignore"
+printf 'describe("w", () => {\n  test("one", () => {\n    expect(1).toBe(1);\n  });\n  test("two", () => {\n    expect(2).toBe(2);\n    expect(3).toBe(3);\n  });\n});\n' > "$WT/tests/w.test.js"
+git -C "$WT" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
+git -C "$WT" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+if git -C "$WT" -c user.email=t@t -c user.name=t worktree add -q "$T/wtlinked" -b wt-feature >/dev/null 2>&1; then
+  L="$T/wtlinked"
+  total=$((total+1))
+  if [ -f "$L/.git" ] && [ ! -d "$L/.git" ]; then echo "  ok    the linked worktree carries a .git file, not a directory"
+  else echo "  FAIL  the fixture is not a real linked worktree"; fails=$((fails+1)); fi
+  mkdir -p "$L/working/wt-task"; printf '# brief wt-task\n' > "$L/working/wt-task/brief.md"
+  (cd "$L" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal wt-task 2 >"$T/wtseal.out" 2>&1); rc=$?
+  total=$((total+1))
+  if [ "$rc" -eq 0 ] && grep -q '^baseline_commit\.' "$L/working/wt-task/brief.md"; then echo "  ok    baseline.sh seals inside a linked worktree"
+  else echo "  FAIL  baseline.sh could not seal inside a linked worktree"; fails=$((fails+1)); sed 's/^/        /' "$T/wtseal.out"; fi
+  printf 'describe("w", () => {\n  test("one", () => {\n    expect(1).toBe(1);\n  });\n});\n' > "$L/tests/w.test.js"
+  git -C "$L" -c user.email=t@t -c user.name=t commit -qam weaken >/dev/null 2>&1
+  for shell in $shells; do
+    if [ "$shell" = ps1 ]; then wcwd="$(winpath "$L")"; else wcwd="$L"; fi
+    p_wt='{"cwd":"'"$wcwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+    case_ "$shell: a weakened committed test in a worktree blocks" 2 "$(run $shell verify-on-finish "$p_wt")"
+    total=$((total+1)); if grep -q "since the task baseline" "$T/err"; then echo "  ok    $shell: the worktree block names the task baseline"; else echo "  FAIL  $shell: the worktree block does not name the baseline"; fails=$((fails+1)); fi
+  done
+  (cd "$WT" && git worktree remove --force "$L" >/dev/null 2>&1)
+else
+  echo "  ----  git worktree add failed here; the worktree cases did not run"
+fi
+
+# ---- Stop must re-check after it has already blocked --------------------------------------------
+# stop_hook_active says a Stop hook already blocked this turn. Exiting 0 on it made the second Stop
+# an unconditional pass, so blocking once and carrying on finished the turn with the weakening in
+# place. Loop protection is Claude Code's own consecutive-block limit, not this hook giving up.
+echo "Stop re-checks after it has blocked"
+RC="$T/recheck"; mkdir -p "$RC/tests"
+git -C "$RC" init -q 2>/dev/null; git -C "$RC" config core.autocrlf false
+printf 'working/\n' > "$RC/.gitignore"
+printf 'test("a", () => { expect(1).toBe(1); expect(2).toBe(2); });\n' > "$RC/tests/r.test.js"
+git -C "$RC" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
+git -C "$RC" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+mkdir -p "$RC/working/rt"; printf '# brief rt\n' > "$RC/working/rt/brief.md"
+(cd "$RC" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal rt 2 >/dev/null 2>&1)
+printf 'test("a", () => { expect(1).toBe(1); });\n' > "$RC/tests/r.test.js"
+git -C "$RC" -c user.email=t@t -c user.name=t commit -qam weaken >/dev/null 2>&1
+for shell in $shells; do
+  if [ "$shell" = ps1 ]; then rcwd="$(winpath "$RC")"; else rcwd="$RC"; fi
+  p_first='{"cwd":"'"$rcwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+  p_again='{"cwd":"'"$rcwd"'","session_id":"'"$SIDA"'","stop_hook_active":true}'
+  case_ "$shell: the first Stop blocks the weakening"          2 "$(run $shell verify-on-finish "$p_first")"
+  case_ "$shell: the second Stop blocks it again"              2 "$(run $shell verify-on-finish "$p_again")"
+  printf 'test("a", () => { expect(1).toBe(1); expect(2).toBe(2); });\n' > "$RC/tests/r.test.js"
+  git -C "$RC" -c user.email=t@t -c user.name=t commit -qam restore >/dev/null 2>&1
+  case_ "$shell: once fixed the second Stop allows the turn"   0 "$(run $shell verify-on-finish "$p_again")"
+  printf 'test("a", () => { expect(1).toBe(1); });\n' > "$RC/tests/r.test.js"
+  git -C "$RC" -c user.email=t@t -c user.name=t commit -qam weaken-again >/dev/null 2>&1
+done
+
+# ---- a seal that cannot be verified fails closed -------------------------------------------------
+# An unverifiable seal is the state a moved baseline also produces, so it is not waved through. The
+# environment seam exists because no PATH on a Git Bash machine carries coreutils without sha256sum;
+# it is the same convention as GUARD_COMMANDS_SELFTEST, which verify.sh uses on guard-commands.
+echo "an unverifiable seal fails closed"
+printf 'test("a", () => { expect(1).toBe(1); expect(2).toBe(2); });\n' > "$RC/tests/r.test.js"
+git -C "$RC" -c user.email=t@t -c user.name=t commit -qam restore2 >/dev/null 2>&1
+for shell in $shells; do
+  if [ "$shell" = ps1 ]; then rcwd="$(winpath "$RC")"; else rcwd="$RC"; fi
+  p_nd='{"cwd":"'"$rcwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+  case_ "$shell: a clean sealed task with a working digest passes" 0 "$(run $shell verify-on-finish "$p_nd")"
+  got=$(VERIFY_ON_FINISH_NO_DIGEST=1 run $shell verify-on-finish "$p_nd")
+  case_ "$shell: a sealed task whose seal cannot be verified blocks" 2 "$got"
+  total=$((total+1)); if grep -q "cannot be verified" "$T/err"; then echo "  ok    $shell: the block says the seal could not be verified"; else echo "  FAIL  $shell: the block does not say the seal was unverifiable"; fails=$((fails+1)); fi
+  rm -rf "$RC/working/active-tasks"
+  got=$(VERIFY_ON_FINISH_NO_DIGEST=1 run $shell verify-on-finish "$p_nd")
+  case_ "$shell: with no sealed task an absent digest is not a block" 0 "$got"
+  mkdir -p "$RC/working/active-tasks"; printf 'working/rt/brief.md\n' > "$RC/working/active-tasks/$SIDA"
 done
 
 echo; echo "  $((total-fails)) passed, $fails failed"

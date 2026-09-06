@@ -58,8 +58,10 @@ $ErrorActionPreference = 'Stop'
 $raw = [Console]::In.ReadToEnd()
 try { $payload = $raw | ConvertFrom-Json } catch { exit 0 }
 
-# LOOP GUARD. Non-negotiable.
-if ($payload.stop_hook_active -eq $true) { exit 0 }
+# stop_hook_active says a Stop hook already blocked this turn. Exiting 0 here made the second Stop
+# an unconditional pass: block once, carry on, finish. The deterministic check runs again instead,
+# so a weakening still present still blocks and a fixed one is allowed. Loop protection is Claude
+# Code's own consecutive-block limit, which overrides a Stop hook after eight.
 
 $cwd = if ($payload.cwd) { $payload.cwd } else { (Get-Location).Path }
 $session = [string]$payload.session_id
@@ -77,6 +79,27 @@ if ($transcript -and (Test-Path $transcript)) {
 }
 
 # ---- where to look ------------------------------------------------------------------------
+$git = (Get-Command git -ErrorAction SilentlyContinue).Source
+if (-not $git) { exit 0 }
+
+# Is this the root of a git checkout? A linked worktree carries a .git FILE, not a directory, so
+# testing for a directory made every worktree invisible to this hook. Ask git instead. Resolve-Path
+# on both sides normalises the two path forms Windows produces.
+function Test-CheckoutRoot([string]$Path) {
+    if (-not (Test-Path $Path -PathType Container)) { return $false }
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $top = & $git -C $Path rev-parse --show-toplevel 2>$null; if ($LASTEXITCODE -ne 0) { return $false } }
+    catch { return $false } finally { $ErrorActionPreference = $prev }
+    $top = (@($top) -join '').Trim()
+    if (-not $top) { return $false }
+    try {
+        $a = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path.TrimEnd('\', '/')
+        $b = (Resolve-Path -LiteralPath $top  -ErrorAction Stop).Path.TrimEnd('\', '/')
+    } catch { return $false }
+    return ($a -eq $b)
+}
+
 $repos = @()
 $marker = Join-Path $cwd '.workspace'
 if (Test-Path $marker) {
@@ -85,17 +108,14 @@ if (Test-Path $marker) {
         $reposRoot = $line.Matches[0].Groups[1].Value.Trim()
         if (Test-Path $reposRoot) {
             $repos = Get-ChildItem -Path $reposRoot -Directory -ErrorAction SilentlyContinue |
-                     Where-Object { Test-Path (Join-Path $_.FullName '.git') } |
+                     Where-Object { Test-CheckoutRoot $_.FullName } |
                      ForEach-Object { $_.FullName }
         }
     }
-} elseif (Test-Path (Join-Path $cwd '.git')) {
+} elseif (Test-CheckoutRoot $cwd) {
     $repos += $cwd
 }
 if (-not $repos -or $repos.Count -eq 0) { exit 0 }
-
-$git = (Get-Command git -ErrorAction SilentlyContinue).Source
-if (-not $git) { exit 0 }
 
 # Call git without ever letting its stderr reach PowerShell's error stream. Redirecting native
 # stderr under 'Stop' is what killed this hook silently once (2026-09-01). Suspending 'Stop' for
@@ -188,6 +208,8 @@ function Get-CanonicalSeal {
 }
 function Get-Sha256Hex {
     param([string]$Text)
+    # Same seam as the bash twin, for the same reason: the fail-closed branch has to be reachable.
+    if ($env:VERIFY_ON_FINISH_NO_DIGEST) { throw 'digest disabled for the self-test' }
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
@@ -198,7 +220,19 @@ function Get-Sha256Hex {
 if ($briefFile) {
     $sealHit = $fm | Where-Object { $_.StartsWith('seal_sha256:', [System.StringComparison]::Ordinal) } | Select-Object -First 1
     $want = if ($sealHit) { ($sealHit.Trim() -split '\s+')[-1] } else { '' }
-    $have = Get-Sha256Hex (Get-CanonicalSeal $fm)
+    # Fail closed if the digest cannot be computed at all: an unverifiable seal is the state a
+    # moved baseline also produces, so it is not waved through.
+    $have = $null
+    try { $have = Get-Sha256Hex (Get-CanonicalSeal $fm) } catch { $have = $null }
+    if ($null -eq $have) {
+        $m = @()
+        $m += "STOP: the sealed approval in $briefName cannot be verified here."
+        $m += ''
+        $m += '  seal_sha256 could not be recomputed, so this hook cannot tell an intact seal from a'
+        $m += '  moved one. This session is carrying a sealed task, and that is not waved through.'
+        [Console]::Error.WriteLine(($m -join "`n"))
+        exit 2
+    }
     # A brief recording a baseline with no digest is not a legacy seal to be trusted: deleting one
     # line would otherwise turn any sealed brief into one.
     if (-not $want -or $want -ne $have) {

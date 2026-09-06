@@ -243,3 +243,27 @@ rather than reading it, is recorded in its own section above.
 
 The review also closed a gap this page recorded: the update states now run through `install.ps1` as
 well as `install.sh`, and a case asserts the two produce the same managed lines and hashes.
+
+## The hardening pass of 2026-09-06
+
+**An unmanaged path could become managed by coincidence.** A path recorded `unmanaged`, because the
+adopter already owned it when a release first shipped that path, was re-examined on every later
+update as though it had never been seen. The moment upstream drifted into byte-for-byte agreement
+with the adopter's file, it was adopted as managed, and the release after that would have replaced
+their file with ours. The manifest is meant to record who owns a path, and coincidence is not a
+transfer of ownership.
+
+A path recorded `unmanaged` now stays unmanaged while the local file exists, whatever the bytes say.
+Removing their file is the only thing that frees the path, because at that point the collision the
+record describes is over. The regression walks three releases: collision, then upstream matching by
+coincidence, then upstream moving again, with the adopter's file preserved and unclaimed throughout.
+
+This is a different question from a managed file the adopter changed and later put back. That one
+still rejoins the managed set, because it started as ours and has converged on the shipped bytes; a
+case asserts both behaviours side by side so neither fix can quietly undo the other.
+
+**The hooks are managed but the wiring was not checked.** The updater replaces hook scripts, and
+`settings.json` decides whether any of them ever runs, so a hook on disk that nothing calls is not a
+guard. `verify.sh` now reads the wiring and reports when one of the four required hooks is missing
+from its expected event and matcher. It reads and reports only: it never rewrites settings, and a
+customised file that still carries the four passes. Proved to go red by removing the `Stop` entry.
