@@ -117,7 +117,12 @@ inside {
   if (match(line, /^[A-Za-z_]+:/)) {
     k = substr(line, 1, RLENGTH-1); v = substr(line, RLENGTH+1)
     sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
-    val[k] = v; seen[k] = 1
+    # The FIRST value counts, and a second one is reported. Last-wins was the real hole behind the
+    # unterminated-header case: prose further down the page could set status, as_of and confidence
+    # again and repair an invalid header, and a stray --- rule in the body closed the block so the
+    # page looked well formed. Requiring the fence alone does not close that; this does.
+    if (k in seen) { if (!(k in dupseen)) { dupseen[k] = 1; duplist[++dn] = k } }
+    else { val[k] = v; seen[k] = 1 }
   }
   next
 }
@@ -127,6 +132,7 @@ END {
   # An unterminated block would otherwise swallow the whole page as header, find every required
   # field somewhere in the prose, and pass. It is malformed, and it says so.
   if (!done) { prob("the page header opens with --- and is never closed"); exit }
+  for (i = 1; i <= dn; i++) prob("the page header sets " duplist[i] " more than once; the first value is the one read")
   n = split(required, req, " ")
   for (i = 1; i <= n; i++) {
     f = req[i]

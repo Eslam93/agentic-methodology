@@ -3,7 +3,7 @@ title: Which knowledge-base rules became executable checks, which stayed convent
 status: verified
 as_of: 2026-09-05
 last_verified: 2026-09-05
-verification_method: knowledge-check.sh and its 68 fixture cases run on the owner's Windows machine in Git Bash on 2026-09-05 and 2026-09-06, with the outputs quoted below; the ambiguity measurement was taken by a script over all 21 pages of this base at b4b254f; three deliberate mutations of the validator were run to confirm the canary and the suite go red
+verification_method: knowledge-check.sh and its 71 fixture cases run on the owner's Windows machine in Git Bash on 2026-09-05 and 2026-09-06, with the outputs quoted below; the ambiguity measurement was taken by a script over all 21 pages of this base at b4b254f; three deliberate mutations of the validator were run to confirm the canary and the suite go red
 scope: The change decided as D-20: knowledge-check.sh, its conf and its case suite, the three new verify.sh checks, the canary extension, and the text that describes them. Not semantic evidence validation, not automatic confidence, not executable reverify_when, not truth diff, not contradiction detection, not network validation
 confidence: High for what the tool does and what it refuses to do; each is a command and its output. Medium that the `repo:` and `commit:` convention will be used, since nothing in the base uses it yet and it is proved only by fixtures
 known_gaps: No independent review has run against this change; the owner deferred it for this turn. The validator has never run on macOS or on a second machine, and shape B was reasoned about rather than exercised. Bare backticked paths and bare hex strings are not checked at all, which is most of the evidence in this base. Nothing here decides whether a claim is true
@@ -22,7 +22,7 @@ resolve, or whose README states a count the tree contradicts. It decides structu
 |---|---|
 | `.claude/tools/knowledge-check.sh` | new: the validator, three sections, human output or `--porcelain` |
 | `.claude/tools/knowledge-drift.conf` | new: the curated count list for this repository, with the exclusions and their reasons |
-| `.claude/tools/knowledge-check.test.sh` | new: 68 cases, each building a tree and running the real validator |
+| `.claude/tools/knowledge-check.test.sh` | new: 71 cases, each building a tree and running the real validator |
 | `.claude/tools/verify.sh` | three new checks in the normal run; the suite under `--hooks`; the canary now breaks a record and watches it go red |
 | `README.md` | the tool named; the acceptance sentence corrected; the tool count corrected |
 | `00-orientation/evidence-and-verification-rules.md`, `.claude/rules/knowledge-base.md` | which parts of the header are now mechanically checked, and which are still only asked for |
@@ -212,7 +212,7 @@ this change adds two scripts, and the check caught that too before the README wa
 
 ## The suite, and the cost
 
-`bash .claude/tools/knowledge-check.test.sh`: **68 cases, 0 failed**. Each builds a project root,
+`bash .claude/tools/knowledge-check.test.sh`: **71 cases, 0 failed**. Each builds a project root,
 mutates one thing, runs the real validator, and asserts the exit code **and** a substring of the
 message, so a check that fails for the wrong reason does not count as a pass. Nothing in the suite
 greps the validator's source.
@@ -277,11 +277,17 @@ The change above was reviewed the next day by six independent readers, each runn
 rather than reading it, and each finding verified by a second reader who tried to refute it. Five
 defects in this layer held, and all five are fixed with a case each.
 
-**A page whose header is never closed passed.** The parser opened the front matter at line 1 and
-closed it only on a bare `---`; with no closing fence the whole document was read as header, so
-prose further down could supply a valid `status:` after an invalid one and the page passed. Three
-separate red cases could be defeated at once this way. An unterminated header is now malformed and
-says so. Found independently by the owner's own probe and by the review.
+**A page whose header is never closed passed, and requiring the fence was not the fix.** The parser
+opened the front matter at line 1 and closed it only on a bare `---`; with no closing fence the whole
+document was read as header, so prose further down could supply a valid `status:` after an invalid
+one and three separate red cases were defeated at once.
+
+The first repair required a closing fence, and the verifier showed that this was the insufficient
+half: an ordinary Markdown horizontal rule later in the body sets the fence, so the page looks well
+formed while the prose above it has already overwritten the header. The hole was **last-wins**, not
+the missing fence. The parser now reads the first value of each key and reports a repeat, which
+closes both shapes, and a page with a duplicated key inside a correctly closed fence fails as well.
+Recorded because the obvious fix was tested and found to be half of one; three cases cover it.
 
 **A hyphenated number was read as its last word.** The curated patterns anchor on `[a-z]+`, so
 "twenty-one hooks" matched as the fragment "one hooks" and was read as 1. A README claiming

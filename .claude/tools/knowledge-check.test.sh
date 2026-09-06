@@ -114,6 +114,17 @@ mk "$R"; sed 's/^known_gaps:.*/known_gaps:/' "$KB/_readings/study.md" > "$T/x" &
 run "$R"; check "a required field present but empty"                 1 "required field is empty: known_gaps"
 mk "$R"; printf '# no front matter at all\n' > "$KB/_readings/study.md"
 run "$R"; check "a page with no front matter block"                  1 "no page header"
+# Last-wins was the hole: a second copy of a key further down could repair an invalid header, and a
+# stray --- rule in the body closed the block so the page still looked well formed.
+mk "$R"; sed 's/^status: verified/status: bogus-value/' "$KB/_readings/study.md" > "$T/x" && mv "$T/x" "$KB/_readings/study.md"
+awk '{ print } /^reverify_when:/ { print "status: verified" }' "$KB/_readings/study.md" > "$T/x" && mv "$T/x" "$KB/_readings/study.md"
+run "$R"; check "a key set twice cannot repair an invalid value"     1 "sets status more than once"
+mk "$R"; run "$R"; check "and the same page without the repeat is fine" 0 "PASS  page header schema"
+mk "$R"
+{ sed 's/^status: verified/status: bogus-value/' "$KB/_readings/study.md" | grep -v '^---$' | head -20
+  printf 'status: verified\n\n---\n\nbody after a horizontal rule\n'; } > "$T/x"
+{ printf -- '---\n'; cat "$T/x"; } > "$KB/_readings/study.md"
+run "$R"; check "a stray --- rule cannot close a header for free"    1 "more than once"
 mk "$R"; grep -v '^---$' "$KB/_readings/study.md" > "$T/x"; { printf -- '---\n'; cat "$T/x"; } > "$KB/_readings/study.md"
 run "$R"; check "a header opened and never closed"                   1 "never closed"
 mk "$R"; printf -- '---\n' > "$KB/_readings/study.md"
