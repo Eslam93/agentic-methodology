@@ -349,6 +349,35 @@ mkt t1 1; bl check t1; rc=$?
 tcase "tier 1 with no review still passes"             "$( [ "$rc" -eq 0 ] && echo 1 || echo 0)"
 rm -rf "$R/working/t3a" "$R/working/t3b" "$R/working/t2" "$R/working/t1" "$R/working/no-tier" "$R/working/preload" "$R/working/notier" "$R/working/route"
 
+# ---- D: a completed review covers the commit it read ---------------------------------------
+# Freshness, not provenance. A review of commit A does not cover commit B, so a task whose code
+# moved after the review is not reviewed for the purpose of handing it back.
+gitb() { git -C "$R" -c user.email=t@t -c user.name=t "$@"; }
+mkt fresh 3
+bl review fresh completed code-review "PASS, 0 red"; rc=$?
+tcase "a completed review records the commit it read" "$( { [ "$rc" -eq 0 ] && grep -q '^review_commit\.' "$R/working/fresh/brief.md"; } && echo 1 || echo 0)"
+bl check fresh; rc=$?
+tcase "tier 3 passes while the code is still the reviewed commit" "$( { [ "$rc" -eq 0 ] && grep -q 'still matches the reviewed commit' "$T/bl.out"; } && echo 1 || echo 0)"
+printf 'moved after the review\n' > "$R/after-review.txt"; gitb add -A >/dev/null 2>&1; gitb commit -qm after-review >/dev/null 2>&1
+bl check fresh; rc=$?
+tcase "tier 3 fails once the code has moved past the review" "$( { [ "$rc" -ne 0 ] && grep -q 'REVIEW IS STALE' "$T/bl.out"; } && echo 1 || echo 0)"
+bl review fresh completed code-review "PASS again, at the new commit"; rc=$?
+tcase "a second review is allowed once the code has moved" "$( [ "$rc" -eq 0 ] && echo 1 || echo 0)"
+bl check fresh; rc=$?
+tcase "and tier 3 passes again on the fresh review" "$( [ "$rc" -eq 0 ] && echo 1 || echo 0)"
+bl review fresh completed code-review "a third, at the same commit"; rc=$?
+tcase "a second review of the same commit is refused" "$( { [ "$rc" -ne 0 ] && grep -q 'completed review of this exact code' "$T/bl.out"; } && echo 1 || echo 0)"
+bl review fresh waived "never mind"; rc=$?
+tcase "a waiver cannot overwrite a recorded review" "$( { [ "$rc" -ne 0 ] && grep -q 'not waived afterwards' "$T/bl.out"; } && echo 1 || echo 0)"
+bl check fresh; rc=$?
+tcase "the seal still verifies after the review rewrites" "$( grep -q 'seal intact' "$T/bl.out" && echo 1 || echo 0)"
+# a waiver still stands on its own, and is not replaced by a review
+mkt waive3 3
+bl review waive3 waived "the owner said skip it, this is a docs-only change"; rc=$?
+tcase "a waiver is recorded"                          "$( [ "$rc" -eq 0 ] && echo 1 || echo 0)"
+bl review waive3 completed code-review "PASS"; rc=$?
+tcase "a review cannot overwrite the owner's waiver"  "$( { [ "$rc" -ne 0 ] && grep -q 'does not move' "$T/bl.out"; } && echo 1 || echo 0)"
+
 echo "resume-brief"
 # The brief a session gets back after a compaction is the one it was carrying, read from the
 # pointer baseline.sh wrote at the owner's yes. The bug this replaces: /codex-relay writes
@@ -444,10 +473,77 @@ if git -C "$WT" -c user.email=t@t -c user.name=t worktree add -q "$T/wtlinked" -
     case_ "$shell: a weakened committed test in a worktree blocks" 2 "$(run $shell verify-on-finish "$p_wt")"
     total=$((total+1)); if grep -q "since the task baseline" "$T/err"; then echo "  ok    $shell: the worktree block names the task baseline"; else echo "  FAIL  $shell: the worktree block does not name the baseline"; fails=$((fails+1)); fi
   done
+  # A: a linked worktree starts with no working/ at all, because everything there is ignored. The
+  # tools must fall back rather than invent shared state, and nothing may be copied between them.
+  L2="$T/wtfresh"
+  if git -C "$WT" -c user.email=t@t -c user.name=t worktree add -q "$L2" -b wt-fresh >/dev/null 2>&1; then
+    total=$((total+1))
+    if [ ! -d "$L2/working" ]; then echo "  ok    a fresh worktree carries no working/ state"
+    else echo "  FAIL  working/ appeared in a fresh worktree"; fails=$((fails+1)); fi
+    for shell in $shells; do
+      if [ "$shell" = ps1 ]; then fcwd="$(winpath "$L2")"; else fcwd="$L2"; fi
+      p_fresh='{"cwd":"'"$fcwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+      case_ "$shell: a worktree with no working/ falls back, no block" 0 "$(run $shell verify-on-finish "$p_fresh")"
+    done
+    (cd "$WT" && git worktree remove --force "$L2" >/dev/null 2>&1)
+  fi
   (cd "$WT" && git worktree remove --force "$L" >/dev/null 2>&1)
 else
   echo "  ----  git worktree add failed here; the worktree cases did not run"
 fi
+
+# ---- C: one exact test change the owner authorized ----------------------------------------------
+# Not a waiver and not a switch. Keyed on the file AND the sha256 of the content it ends at, so it
+# covers that change and nothing after it, and nothing on any other file.
+echo "an owner-authorized test change"
+AU="$T/authz"; mkdir -p "$AU/tests"
+git -C "$AU" init -q 2>/dev/null; git -C "$AU" config core.autocrlf false
+printf 'working/\n' > "$AU/.gitignore"
+printf 'test("a", () => { expect(1).toBe(1); expect(2).toBe(2); expect(3).toBe(3); });\n' > "$AU/tests/a.test.js"
+printf 'test("b", () => { expect(1).toBe(1); expect(2).toBe(2); });\n' > "$AU/tests/b.test.js"
+git -C "$AU" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
+git -C "$AU" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+mkdir -p "$AU/working/az"; printf '# brief az\n' > "$AU/working/az/brief.md"
+(cd "$AU" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal az 2 >/dev/null 2>&1)
+printf 'test("a", () => { expect(1).toBe(1); });\n' > "$AU/tests/a.test.js"
+git -C "$AU" -c user.email=t@t -c user.name=t commit -qam weaken-a >/dev/null 2>&1
+for shell in $shells; do
+  if [ "$shell" = ps1 ]; then acwd="$(winpath "$AU")"; else acwd="$AU"; fi
+  p_az='{"cwd":"'"$acwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+  case_ "$shell: the weakening blocks before it is authorized" 2 "$(run $shell verify-on-finish "$p_az")"
+done
+(cd "$AU" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" allow-test-change az authz/tests/a.test.js "the other two cases moved to the integration suite" >"$T/az.out" 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -eq 0 ] && grep -q '^test_change_allowed: ' "$AU/working/az/brief.md"; then echo "  ok    the authorization is recorded in the brief"; else echo "  FAIL  allow-test-change did not record"; fails=$((fails+1)); sed 's/^/        /' "$T/az.out"; fi
+for shell in $shells; do
+  if [ "$shell" = ps1 ]; then acwd="$(winpath "$AU")"; else acwd="$AU"; fi
+  p_az='{"cwd":"'"$acwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+  case_ "$shell: the authorized change is allowed"             0 "$(run $shell verify-on-finish "$p_az")"
+  total=$((total+1)); if grep -q 'authorized test changes were allowed' "$T/out"; then echo "  ok    $shell: the allowance is said out loud"; else echo "  FAIL  $shell: the allowance is silent"; fails=$((fails+1)); fi
+done
+# one more edit to the same file, and the authorization no longer matches
+printf 'test("a", () => { });\n' > "$AU/tests/a.test.js"
+git -C "$AU" -c user.email=t@t -c user.name=t commit -qam weaken-a-more >/dev/null 2>&1
+for shell in $shells; do
+  if [ "$shell" = ps1 ]; then acwd="$(winpath "$AU")"; else acwd="$AU"; fi
+  p_az='{"cwd":"'"$acwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+  case_ "$shell: a further weakening of the same file blocks"  2 "$(run $shell verify-on-finish "$p_az")"
+done
+git -C "$AU" -c user.email=t@t -c user.name=t revert -q --no-edit HEAD >/dev/null 2>&1 || {
+  printf 'test("a", () => { expect(1).toBe(1); });\n' > "$AU/tests/a.test.js"
+  git -C "$AU" -c user.email=t@t -c user.name=t commit -qam back >/dev/null 2>&1; }
+# a different test file is not covered by it
+printf 'test("b", () => { expect(1).toBe(1); });\n' > "$AU/tests/b.test.js"
+git -C "$AU" -c user.email=t@t -c user.name=t commit -qam weaken-b >/dev/null 2>&1
+for shell in $shells; do
+  if [ "$shell" = ps1 ]; then acwd="$(winpath "$AU")"; else acwd="$AU"; fi
+  p_az='{"cwd":"'"$acwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+  case_ "$shell: a different test file is not covered"         2 "$(run $shell verify-on-finish "$p_az")"
+  total=$((total+1)); if grep -q 'b.test.js' "$T/err"; then echo "  ok    $shell: the block names the file that was not authorized"; else echo "  FAIL  $shell: the block names the wrong file"; fails=$((fails+1)); fi
+done
+(cd "$AU" && bash "$HERE/baseline.sh" allow-test-change az authz/tests/b.test.js >"$T/az2.out" 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -ne 0 ] && grep -q "owner's own words" "$T/az2.out"; then echo "  ok    an authorization with no reason is refused"; else echo "  FAIL  an authorization with no reason was accepted"; fails=$((fails+1)); fi
+(cd "$AU" && bash "$HERE/baseline.sh" allow-test-change az tests/b.test.js "no checkout named" >"$T/az3.out" 2>&1); rc=$?
+total=$((total+1)); if [ "$rc" -ne 0 ]; then echo "  ok    an authorization must name the checkout"; else echo "  FAIL  a path with no checkout was accepted"; fails=$((fails+1)); fi
 
 # ---- Stop must re-check after it has already blocked --------------------------------------------
 # stop_hook_active says a Stop hook already blocked this turn. Exiting 0 on it made the second Stop

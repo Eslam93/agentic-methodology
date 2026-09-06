@@ -240,10 +240,20 @@ if [ "$update" = 1 ] || [ "$check" = 1 ]; then
   fi
   if [ "$check" = 1 ]; then
     echo "nothing was written. $n_mod file(s) would be preserved for you to reconcile."
-  else
-    echo "update complete. $n_mod file(s) were preserved for you to reconcile; nothing was merged or overwritten."
-    echo "Rules and hooks load at session start, so start a new session after this update."
+    exit 0
   fi
+  echo "$n_mod file(s) were preserved for you to reconcile; nothing was merged or overwritten."
+  echo
+  bash "$target/.claude/tools/verify.sh"; vrc=$?
+  echo
+  if [ "$vrc" -ne 0 ]; then
+    echo "FILES UPDATED, NOT YET VERIFIED: verification is red above. Fix what it names, then run"
+    echo "  bash $target/.claude/tools/verify.sh"
+    echo "until it is green. Until then this harness is not known to work."
+    exit 1
+  fi
+  echo "UPDATED AND VERIFIED."
+  echo "Rules and hooks load at session start, so start a new session after this update."
   exit 0
 fi
 
@@ -410,8 +420,20 @@ echo
 echo "Next: open the assistant at $target and say: read START-HERE.md and follow it."
 echo "Rules and hooks load at session start, so start a new session after this install."
 echo
-bash "$target/.claude/tools/verify.sh" || true
-# A half install must not report success. verify.sh's own result is left out of this on purpose: it
-# reports the state of the target, which is a different question from whether the installer worked.
-[ -n "$r_failed" ] && exit 1
+# The installer's own success is not the same as a usable harness. A copied tree whose hooks are not
+# wired, or whose verification is red, is "files are here, now reconcile", not "installed".
+bash "$target/.claude/tools/verify.sh"; vrc=$?
+echo
+if [ -n "$r_failed" ]; then
+  echo "NOT INSTALLED: some managed files could not be written, listed above. The manifest does not"
+  echo "claim them, so running this again retries them."
+  exit 1
+elif [ "$vrc" -ne 0 ]; then
+  echo "FILES COPIED, NOT YET VERIFIED: verification is red above. Nothing here merges settings or"
+  echo "edits your files, so the reconciliation is yours: fix what it names, then run"
+  echo "  bash $target/.claude/tools/verify.sh"
+  echo "until it is green. Until then this harness is not known to work."
+  exit 1
+fi
+echo "INSTALLED AND VERIFIED."
 exit 0

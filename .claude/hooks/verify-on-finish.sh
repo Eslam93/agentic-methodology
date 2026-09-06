@@ -36,6 +36,8 @@
 # The hook never writes a pointer and never seals anything.
 
 payload=$(cat)
+repeat=0
+printf '%s' "$payload" | grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && repeat=1
 # stop_hook_active says a Stop hook already blocked this turn. It used to exit 0 here, which meant
 # the second Stop was an unconditional pass: block once, carry on, finish. The deterministic check
 # runs again instead, so a weakening that is still there still blocks and a fixed one is allowed.
@@ -141,9 +143,14 @@ canonical_seal() { # $1: the front matter text
 if [ -n "$briefFile" ]; then
   want=$(printf '%s\n' "$fm" | awk 'index($0, "seal_sha256:")==1 {print $NF; exit}')
   tool=$(digest_tool)
-  if [ -z "$tool" ]; then
-    # Fail closed. A session carrying a sealed task whose seal cannot be verified is exactly the
-    # state an edited seal produces, and a note on stdout reaches the debug log and nobody else.
+  if [ -z "$tool" ] && [ "$repeat" = 1 ]; then
+    # Said once already. Missing hash tooling is not a test violation and not something the
+    # assistant can repair by editing anything, so blocking again would be a loop with no exit.
+    # The task is still not verified: baseline.sh check fails for the same reason at hand-back.
+    echo "note from verify-on-finish: still no sha256 tool on PATH, so the seal in $briefName was not verified. Not blocking again, because this is not repairable from here. The task is NOT verified; baseline.sh check will say the same at hand-back."
+  elif [ -z "$tool" ]; then
+    # Fail closed, once. A session carrying a sealed task whose seal cannot be verified is exactly
+    # the state an edited seal produces, and a note on stdout reaches the debug log and nobody else.
     {
       echo "STOP: the sealed approval in $briefName cannot be verified here."
       echo
@@ -202,14 +209,36 @@ assertions()   { grep -oE '\bit[[:space:]]*\(|\btest[[:space:]]*\(|\bexpect[[:sp
 skips()        { grep -oiE '\.skip[[:space:]]*\(|\.only[[:space:]]*\(|\[Skip|@skip|xit[[:space:]]*\(|xdescribe[[:space:]]*\(' | wc -l | tr -d ' '; }
 
 problems=""
+allowed=""
+# The owner can authorize one exact test change, recorded in the brief by
+# `baseline.sh allow-test-change`. It is keyed on the file AND the sha256 of the content that
+# results, so it covers that change and nothing after it: one more edit and the hash no longer
+# matches. There is no path-level or task-level switch, by design.
+content_hash() {  # repo relpath -> sha256 of what is on disk now, or "deleted"
+  local f="$1/$2" t
+  [ -f "$f" ] || { echo deleted; return; }
+  t=$(digest_tool); [ -n "$t" ] || { echo unhashable; return; }
+  $t < "$f" | cut -d' ' -f1
+}
+is_authorized() {  # "<checkout>/<path>" contenthash -> 0 when the brief authorizes exactly this
+  [ -n "$fm" ] || return 1
+  printf '%s\n' "$fm" | awk -v key="test_change_allowed: $2 $1 " 'index($0, key)==1 { found=1 } END { exit !found }'
+}
+note_allowed() { allowed="$allowed
+  ALLOWED  $1  (owner-authorized for exactly this content)"; }
+
 compare() { # repo base label oldpath newpath since -> appends to problems
-  local repo="$1" base="$2" label="$3" old="$4" new="$5" since="$6" before after b a sb sa
+  local repo="$1" base="$2" label="$3" old="$4" new="$5" since="$6" before after b a sb sa h
   before=$(git -C "$repo" show "$base:$old" 2>/dev/null)
   after=$(cat "$repo/$new" 2>/dev/null)
   b=$(printf '%s' "$before" | assertions); a=$(printf '%s' "$after" | assertions)
+  sb=$(printf '%s' "$before" | skips); sa=$(printf '%s' "$after" | skips)
+  if [ "$a" -lt "$b" ] || [ "$sa" -gt "$sb" ]; then
+    h=$(content_hash "$repo" "$new")
+    if is_authorized "$(basename "$repo")/$new" "$h"; then note_allowed "$(basename "$repo")/$new"; return; fi
+  fi
   [ "$a" -lt "$b" ] && problems="$problems
   WEAKENED $label  (assertions $b -> $a) since $since"
-  sb=$(printf '%s' "$before" | skips); sa=$(printf '%s' "$after" | skips)
   [ "$sa" -gt "$sb" ] && problems="$problems
   SKIPPED  $label  (skip markers $sb -> $sa) since $since"
 }
@@ -242,6 +271,7 @@ for repo in "${repos[@]}"; do
     [ -z "$file" ] && continue
     case "$code" in
       D*) is_test_file "$file" || continue
+          if is_authorized "$name/$file" deleted; then note_allowed "$name/$file"; continue; fi
           problems="$problems
   DELETED  $name/$file since $since" ;;
       M*) is_test_file "$file" || continue
@@ -279,6 +309,7 @@ for repo in "${repos[@]}"; do
   done <<< "$status"
 done
 
+[ -n "$allowed" ] && echo "note from verify-on-finish: owner-authorized test changes were allowed:$allowed"
 [ -z "$problems" ] && exit 0
 {
   echo "STOP: a test was weakened, skipped, or deleted."
@@ -293,5 +324,10 @@ done
   echo "Do not silence this by reverting the file and re-applying the same edit. A change made"
   echo "since the task baseline stays visible, committed or not, for as long as this session"
   echo "carries this task."
+  echo
+  echo "If the owner has looked at this specific change and agreed the test should lose those"
+  echo "assertions, they can authorize exactly it, and only it:"
+  echo "  bash .claude/tools/baseline.sh allow-test-change <task> <checkout>/<path> \"<their words>\""
+  echo "That records the file and the exact content it ends at. One more edit and it stops applying."
 } >&2
 exit 2

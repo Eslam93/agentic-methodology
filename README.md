@@ -67,7 +67,11 @@ bash kit/.claude/tools/install.sh <your-repo> --shape A                    # one
 bash kit/.claude/tools/install.sh <workspace> --shape B --repos <clones>   # several repositories
 ```
 
-On Windows without Git Bash: `powershell -File kit\.claude\tools\install.ps1 -Target <dir> -Shape A`.
+On Windows, `powershell -File kit\.claude\tools\install.ps1 -Target <dir> -Shape A` copies the same
+files and writes the same manifest. **Git Bash is still required to use the harness:** `verify.sh`,
+`baseline.sh`, and the test suites are Bash scripts, and the PowerShell installer says so and exits
+non-zero when it cannot find bash to verify with. Only the four hooks ship in both shells, because
+those are what the host launches.
 
 The installer copies `.claude/` without overwriting anything, writes the hook settings for your
 operating system, creates `working/` and the knowledge-base skeleton, adds the ignore and attribute

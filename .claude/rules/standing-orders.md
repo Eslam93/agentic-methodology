@@ -86,7 +86,7 @@ README states a count the tree contradicts. It decides structure, never whether 
 |---|---|
 | `.claude/` | the harness: rules, skills, hooks, tools, settings. Committed. Read every session |
 | the knowledge base | facts with evidence, point-in-time, committed. `docs/knowledge-base/` inside a single repository; `knowledge-base/` at the workspace root above several |
-| `working/` | **yours, local, disposable, never committed.** Status, handoffs, task briefs, scratch. Deleting it must lose nothing durable |
+| `working/` | **yours, local, disposable, never committed.** Status, handoffs, task briefs, scratch. Deleting it must lose nothing durable. It is per checkout: a linked worktree starts without it, so a task agreed in one does not travel to another |
 
 In a workspace above several clones, never hardcode a path to them: `. .claude/tools/layout.sh`
 resolves `WS_ROOT`, `WS_REPOS`, and `WS_LAYOUT`. Other projects on the same machine are not

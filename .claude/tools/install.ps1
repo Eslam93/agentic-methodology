@@ -396,8 +396,28 @@ Write-Output ''
 Write-Output "Next: open the assistant at $Target and say: read START-HERE.md and follow it."
 Write-Output 'Rules and hooks load at session start, so start a new session after this install.'
 Write-Output ''
+# The installer's own success is not the same as a usable harness. A copied tree whose hooks are
+# not wired, or whose verification is red, is "files are here, now reconcile", not "installed".
 $bash = (Get-Command bash -ErrorAction SilentlyContinue).Source
-if ($bash) { & $bash (Join-Path $Target '.claude/tools/verify.sh') } else { Write-Output 'bash not found; run .claude/tools/verify.sh from Git Bash.' }
-# A half install must not report success.
-if ($rFailed.Count -gt 0) { exit 1 }
+$vrc = $null
+if ($bash) { & $bash (Join-Path $Target '.claude/tools/verify.sh'); $vrc = $LASTEXITCODE }
+Write-Output ''
+if ($rFailed.Count -gt 0) {
+    Write-Output 'NOT INSTALLED: some managed files could not be written, listed above. The manifest does'
+    Write-Output 'not claim them, so running this again retries them.'
+    exit 1
+}
+if ($null -eq $vrc) {
+    Write-Output 'FILES COPIED, NOT YET VERIFIED: bash was not found, so verify.sh could not run. The'
+    Write-Output 'methodology tools are Bash scripts, so Git Bash is required to use this harness at all.'
+    Write-Output 'Install Git for Windows, then run .claude/tools/verify.sh from Git Bash.'
+    exit 1
+}
+if ($vrc -ne 0) {
+    Write-Output 'FILES COPIED, NOT YET VERIFIED: verification is red above. Nothing here merges settings'
+    Write-Output 'or edits your files, so the reconciliation is yours: fix what it names, then re-run'
+    Write-Output 'verify.sh until it is green. Until then this harness is not known to work.'
+    exit 1
+}
+Write-Output 'INSTALLED AND VERIFIED.'
 exit 0

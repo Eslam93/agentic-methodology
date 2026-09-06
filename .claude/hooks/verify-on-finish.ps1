@@ -224,7 +224,11 @@ if ($briefFile) {
     # moved baseline also produces, so it is not waved through.
     $have = $null
     try { $have = Get-Sha256Hex (Get-CanonicalSeal $fm) } catch { $have = $null }
-    if ($null -eq $have) {
+    if ($null -eq $have -and $payload.stop_hook_active -eq $true) {
+        # Said once already, and missing hash tooling is not repairable from here. The task is
+        # still not verified: baseline.sh check says so at hand-back.
+        Write-Output "note from verify-on-finish: the seal in $briefName still could not be verified. Not blocking again; the task is NOT verified."
+    } elseif ($null -eq $have) {
         $m = @()
         $m += "STOP: the sealed approval in $briefName cannot be verified here."
         $m += ''
@@ -235,14 +239,13 @@ if ($briefFile) {
     }
     # A brief recording a baseline with no digest is not a legacy seal to be trusted: deleting one
     # line would otherwise turn any sealed brief into one.
-    if (-not $want -or $want -ne $have) {
+    elseif (-not $want -or $want -ne $have) {
         # Falling back to HEAD here would hand the edit exactly what it was after, because the
         # comparison base itself may be what moved. There is no safe base left, so the turn stops.
         $reason = if (-not $want) { 'it records a baseline but carries no seal_sha256 at all' }
                   else { 'seal_sha256 does not match the approval fields now in the brief' }
-        if ($true) {
-            $m = @()
-            $m += "STOP: the sealed approval in $briefName cannot be trusted."
+        $m = @()
+        $m += "STOP: the sealed approval in $briefName cannot be trusted."
             $m += ''
             $m += "  $reason. The approval fields are task, approved_at,"
             $m += '  tier, every baseline_commit, brief_sha256, and pre_existing.'
@@ -257,11 +260,10 @@ if ($briefFile) {
             $m += '  - if the agreement really changed, say so to the owner, write a new brief under'
             $m += '    working/<new-task>/ and seal that one, leaving this approval readable beside it.'
             $m += ''
-            $t = $briefName -replace '^working/', '' -replace '/brief\.md$', ''
-            $m += "  bash .claude/tools/baseline.sh check $t"
-            [Console]::Error.WriteLine(($m -join "`n"))
-            exit 2
-        }
+        $t = $briefName -replace '^working/', '' -replace '/brief\.md$', ''
+        $m += "  bash .claude/tools/baseline.sh check $t"
+        [Console]::Error.WriteLine(($m -join "`n"))
+        exit 2
     }
 }
 
@@ -285,7 +287,23 @@ function Get-SkipCount {
     return ([regex]::Matches($Text, '(?i)\.skip\s*\(|\.only\s*\(|\[Skip|@skip|xit\s*\(|xdescribe\s*\(')).Count
 }
 
+# The owner can authorize one exact test change, recorded in the brief by
+# `baseline.sh allow-test-change`. Keyed on the file AND the sha256 of the resulting content, so it
+# covers that change and nothing after it. No path-level or task-level switch, by design.
+function Get-ContentHash([string]$Repo, [string]$Rel) {
+    $f = Join-Path $Repo $Rel
+    if (-not (Test-Path $f -PathType Leaf)) { return 'deleted' }
+    try { return (Get-FileHash -Path $f -Algorithm SHA256).Hash.ToLowerInvariant() } catch { return 'unhashable' }
+}
+function Test-Authorized([string]$Label, [string]$Hash) {
+    if (-not $fm) { return $false }
+    $key = "test_change_allowed: $Hash $Label "
+    foreach ($l in $fm) { if ($l.StartsWith($key, [System.StringComparison]::Ordinal)) { return $true } }
+    return $false
+}
+
 $problems = @()
+$allowed = @()
 foreach ($repo in $repos) {
     $name = Split-Path $repo -Leaf
     $base = 'HEAD'; $since = 'HEAD'
@@ -324,6 +342,7 @@ foreach ($repo in $repos) {
         $label = $null; $old = $file; $new = $file; $cmpBase = $base; $cmpSince = $since
         if ($code -like 'D*') {
             if (-not (Test-IsTestFile $file)) { continue }
+            if (Test-Authorized "$name/$file" 'deleted') { $allowed += "$name/$file"; continue }
             $problems += "DELETED  $name/$file since $since"; continue
         } elseif ($code -like 'M*') {
             if (-not (Test-IsTestFile $file)) { continue }
@@ -374,13 +393,19 @@ foreach ($repo in $repos) {
         $after = if (Test-Path $afterPath) { Get-Content $afterPath -Raw -ErrorAction SilentlyContinue } else { '' }
         $b = Get-AssertionCount $before
         $a = Get-AssertionCount $after
-        if ($a -lt $b) { $problems += "WEAKENED $label  (assertions $b -> $a) since $cmpSince" }
         $skipsBefore = Get-SkipCount $before
         $skipsAfter  = Get-SkipCount $after
+        if (($a -lt $b) -or ($skipsAfter -gt $skipsBefore)) {
+            if (Test-Authorized "$name/$new" (Get-ContentHash $repo $new)) { $allowed += "$name/$new"; continue }
+        }
+        if ($a -lt $b) { $problems += "WEAKENED $label  (assertions $b -> $a) since $cmpSince" }
         if ($skipsAfter -gt $skipsBefore) { $problems += "SKIPPED  $label  (skip markers $skipsBefore -> $skipsAfter) since $cmpSince" }
     }
 }
 
+if ($allowed.Count -gt 0) {
+    Write-Output ("note from verify-on-finish: owner-authorized test changes were allowed: " + ($allowed -join ', '))
+}
 if ($problems.Count -eq 0) { exit 0 }
 
 $msg = @()
@@ -397,5 +422,10 @@ $msg += ''
 $msg += 'Do not silence this by reverting the file and re-applying the same edit. A change made'
 $msg += 'since the task baseline stays visible, committed or not, for as long as this session'
 $msg += 'carries this task.'
+$msg += ''
+$msg += 'If the owner has looked at this specific change and agreed the test should lose those'
+$msg += 'assertions, they can authorize exactly it, and only it:'
+$msg += '  bash .claude/tools/baseline.sh allow-test-change <task> <checkout>/<path> "<their words>"'
+$msg += 'That records the file and the exact content it ends at. One more edit and it stops applying.'
 [Console]::Error.WriteLine(($msg -join "`n"))
 exit 2

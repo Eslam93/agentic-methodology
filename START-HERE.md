@@ -81,7 +81,10 @@ bash <kit>/.claude/tools/install.sh <target> --shape A
 bash <kit>/.claude/tools/install.sh <target> --shape B --repos <folder containing the clones>
 ```
 
-Or on Windows without Git Bash: `powershell -File <kit>\.claude\tools\install.ps1 -Target <dir> -Shape A`.
+Or on Windows: `powershell -File <kit>\.claude\tools\install.ps1 -Target <dir> -Shape A`. Say plainly
+that Git Bash is still required afterwards: the hooks ship in both shells, but `verify.sh`,
+`baseline.sh`, and the suites are Bash, so without it the files are copied and nothing can be
+verified. The PowerShell installer reports exactly that and exits non-zero.
 
 The installer writes `.claude/install-manifest.txt`, which records the release and the hash of
 every file it gave you. Say what it is for in one sentence: a later `--update` replaces only the

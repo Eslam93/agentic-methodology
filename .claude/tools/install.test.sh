@@ -194,6 +194,33 @@ has "and it says --update would take it"      "$T/out" "run it again with --upda
 rc=$(install_ --update)
 is "and --update then takes it"               "$(cat "$P/.claude/rules/standing-orders.md")" "rule v2"
 
+echo "the installer cannot call a red harness installed"
+new_kit; new_proj
+# a verify.sh that fails: files are copied, but the harness is not known to work
+printf '#!/usr/bin/env bash\necho "  FAIL  something is wrong"\nexit 1\n' > "$K/.claude/tools/verify.sh"
+rc=$(install_)
+is "an install whose verification is red exits 1" "$rc" 1
+has "and says the files are copied, not verified" "$T/out" "FILES COPIED, NOT YET VERIFIED"
+hasnt "and never claims it is installed"          "$T/out" "INSTALLED AND VERIFIED"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$K/.claude/tools/verify.sh"
+new_proj; rc=$(install_)
+is "a green install exits 0"                      "$rc" 0
+has "and says so plainly"                         "$T/out" "INSTALLED AND VERIFIED"
+# and the same contract on update
+printf 'rule v2\n' > "$K/.claude/rules/standing-orders.md"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$K/.claude/tools/verify.sh"
+rc=$(install_ --update)
+is "an update whose verification is red exits 1"  "$rc" 1
+has "and says the files are updated, not verified" "$T/out" "FILES UPDATED, NOT YET VERIFIED"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$K/.claude/tools/verify.sh"
+printf 'rule v3\n' > "$K/.claude/rules/standing-orders.md"
+rc=$(install_ --update)
+is "a green update exits 0"                       "$rc" 0
+has "and says so plainly"                         "$T/out" "UPDATED AND VERIFIED"
+rc=$(install_ --update --check)
+is "check still writes nothing and exits 0"       "$rc" 0
+hasnt "and does not claim to have verified"       "$T/out" "UPDATED AND VERIFIED"
+
 echo "an unmanaged path stays unmanaged across releases"
 new_kit; new_proj; install_ >/dev/null
 printf 'collide upstream v1\n' > "$K/.claude/tools/collide.sh"

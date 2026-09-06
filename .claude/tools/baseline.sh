@@ -4,6 +4,7 @@
 #
 #   bash .claude/tools/baseline.sh seal   <task> <tier>              record the approval, bind the session
 #   bash .claude/tools/baseline.sh review <task> completed <route> <evidence>
+#   bash .claude/tools/baseline.sh allow-test-change <task> <checkout>/<path> <owner's reason>
 #   bash .claude/tools/baseline.sh review <task> waived <owner's words>
 #   bash .claude/tools/baseline.sh check  <task>                     is the task fit to hand back
 #
@@ -42,7 +43,7 @@
 
 set -uo pipefail
 
-usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 die()   { echo "baseline.sh: $*" >&2; exit 1; }
 
 cmd="${1:-}"; task="${2:-}"; arg3="${3:-}"
@@ -84,7 +85,7 @@ dir="$root/working/$task"; brief="$dir/brief.md"
 # The keys this tool owns. Everything else in an existing front matter is kept as it was, but these
 # are stripped and rewritten at seal, so a brief cannot arrive at the agreement already carrying its
 # own review record: only `review` writes one, after the task exists.
-SEAL_KEYS='^(task|approved_at|tier|baseline_commit(\.[^:]*)?|brief_sha256|pre_existing|seal_sha256|review_[a-z]+):'
+SEAL_KEYS='^(task|approved_at|tier|baseline_commit(\.[^:]*)?|brief_sha256|pre_existing|seal_sha256|review_[a-z]+(\.[^:]*)?|test_change_[a-z_]+):'
 SESSION_RE='^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$'
 
 front_matter() { # the lines between the opening and closing --- , or nothing
@@ -234,8 +235,31 @@ pre_existing: $n"
     # the two different, dated, and visible to whoever reads the brief later.
     [ "$sealed" = 1 ] || die "working/$task/brief.md carries no baseline; seal it at the owner's yes"
     have=$(printf '%s\n' "$fm" | grep -E '^review_status:' | head -1 | awk '{print $NF}')
-    [ -n "$have" ] && die "working/$task/brief.md already records review_status: $have. One record per task; it does not move"
     when=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    # A waiver stands: the owner said no review, and that is not something a later command undoes.
+    [ "$have" = "waived-by-owner" ] && die "working/$task/brief.md already records review_status: waived-by-owner. The owner's waiver does not move"
+    [ -n "$have" ] && [ "$arg3" = "waived" ] && die "working/$task/brief.md already records review_status: $have. A recorded review is not waived afterwards"
+    # A completed review names the commit it read. Recording a second one is refused while the code
+    # is still that commit, because nothing has changed for a reviewer to look at, and allowed once
+    # the code has moved, because then the first review no longer covers what is being handed back.
+    if [ "$have" = "completed" ]; then
+      moved=0
+      while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        rest="${line#review_commit.}"; rsha="${rest##* }"; rname="${rest%% *}"; rname="${rname%:}"
+        for r in "${repos[@]}"; do
+          if [ "$(basename "$r")" = "$rname" ]; then
+            [ "$(git -C "$r" rev-parse HEAD 2>/dev/null)" = "$rsha" ] || moved=1
+          fi
+        done
+      done <<EOF
+$(printf '%s\n' "$fm" | grep -E '^review_commit\.')
+EOF
+      if [ "$moved" = 0 ]; then
+        die "working/$task/brief.md already records a completed review of this exact code. Record another only after the code has moved"
+      fi
+      echo "the recorded review was of an earlier commit; replacing it with this one" >&2
+    fi
     case "$arg3" in
       completed)
         route="${4:-}"
@@ -250,10 +274,17 @@ pre_existing: $n"
         if [ $# -ge 4 ]; then shift 4; else shift $#; fi
         evidence="$*"
         [ -z "$evidence" ] && die "a completed review carries its result: the verdict line, the finding counts, or what the reviewer returned. A review that was offered, started, or failed is not a completed review"
+        rlines=""
+        for repo in "${repos[@]}"; do
+          rname=$(basename "$repo")
+          rsha=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || die "$rname has no commit to review"
+          rlines="$rlines
+review_commit.$rname: $rsha"
+        done
         new="review_status: completed
 review_route: $route
 review_evidence: $(printf '%s' "$evidence" | tr '\n' ' ')
-review_at: $when" ;;
+review_at: $when${rlines}" ;;
       waived)
         if [ $# -ge 3 ]; then shift 3; else shift $#; fi
         words="$*"
@@ -263,11 +294,56 @@ review_waiver: $(printf '%s' "$words" | tr '\n' ' ')
 review_at: $when" ;;
       *) die "review takes completed or waived" ;;
     esac
-    printf '%s\n' "$new" > "$dir/.review.tmp"
-    awk -v f="$dir/.review.tmp" 'NR==1 {print; next} !done && /^---$/ {while ((getline l < f) > 0) print l; print; done=1; next} {print}' "$brief" > "$brief.tmp" \
-      && mv "$brief.tmp" "$brief" && rm -f "$dir/.review.tmp" || die "could not write working/$task/brief.md"
+    # Rewrite the front matter without any previous review_ lines, then add these. The seal lines
+    # are carried through untouched, so seal_sha256 still verifies: it covers the approval fields,
+    # and a review record is workflow data written later in the task.
+    keptfm=$(printf '%s\n' "$fm" | grep -Ev '^review_[a-z]+(\.[^:]*)?:' | grep -v '^$')
+    {
+      echo "---"
+      [ -n "$keptfm" ] && printf '%s\n' "$keptfm"
+      printf '%s\n' "$new"
+      echo "---"
+      body "$brief"
+    } > "$brief.tmp" && mv "$brief.tmp" "$brief" || die "could not write working/$task/brief.md"
     printf '%s\n' "$new" | sed 's/^/  /'
     echo "recorded in working/$task/brief.md"
+    ;;
+
+  allow-test-change)
+    # The narrowest authorization that can exist: one task, one file, one exact resulting content,
+    # and the owner's words. It is not a waiver and not a switch. Any further edit to that file
+    # changes its hash and the authorization stops matching, so it cannot be reused to cover the
+    # next weakening. There is deliberately no way to authorize a path in general.
+    [ "$sealed" = 1 ] || die "working/$task/brief.md carries no baseline; seal it at the owner's yes"
+    target_path="$arg3"
+    [ -z "$target_path" ] && die "which test: baseline.sh allow-test-change $task <checkout>/<path> \"<what the owner said>\""
+    if [ $# -ge 3 ]; then shift 3; else shift $#; fi
+    why="$*"
+    [ -z "$why" ] && die "an authorized test change carries the owner's own words: why this test may lose assertions. A build decision is not one"
+    cname="${target_path%%/*}"; crest="${target_path#*/}"
+    [ "$cname" = "$target_path" ] && die "name the checkout too, as the Stop hook prints it: <checkout>/<path>"
+    crepo=""; for r in "${repos[@]}"; do [ "$(basename "$r")" = "$cname" ] && crepo="$r"; done
+    [ -z "$crepo" ] && die "no checkout called '$cname' here; the Stop hook prints the name this tool would use"
+    if [ -f "$crepo/$crest" ]; then
+      chash=$(digest_tool >/dev/null && $(digest_tool) < "$crepo/$crest" | cut -d' ' -f1) || die "could not hash $target_path"
+      [ -n "$chash" ] || die "could not hash $target_path"
+    else
+      chash="deleted"
+    fi
+    when=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    # One entry per path: the newest decision is the one that counts.
+    keptfm=$(printf '%s\n' "$fm" | awk -v p=" $target_path " 'index($0, "test_change_allowed:")==1 && index($0, p) {next} {print}' | grep -v '^$')
+    {
+      echo "---"
+      [ -n "$keptfm" ] && printf '%s\n' "$keptfm"
+      printf 'test_change_allowed: %s %s %s %s\n' "$chash" "$target_path" "$when" "$(printf '%s' "$why" | tr '\n' ' ')"
+      echo "---"
+      body "$brief"
+    } > "$brief.tmp" && mv "$brief.tmp" "$brief" || die "could not write working/$task/brief.md"
+    echo "authorized in working/$task/brief.md:"
+    echo "  $target_path at content $chash"
+    echo "  because: $why"
+    echo "Any further edit to that file changes its content and this stops applying."
     ;;
 
   check)
@@ -321,7 +397,39 @@ review_at: $when" ;;
     case "$tier" in
       3)
         case "$status" in
-          completed) echo "tier 3: independent review completed via $detail" ;;
+          completed)
+            echo "tier 3: independent review completed via $detail"
+            # Freshness, not provenance. A review covers the code it read; if the code moved after
+            # it, the thing being handed back is not the thing anybody reviewed.
+            seenany=0; stale=""
+            while IFS= read -r line; do
+              [ -n "$line" ] || continue
+              seenany=1
+              rest="${line#review_commit.}"; rsha="${rest##* }"; rname="${rest%% *}"; rname="${rname%:}"
+              found=0
+              for r in "${repos[@]}"; do
+                if [ "$(basename "$r")" = "$rname" ]; then
+                  found=1
+                  now=$(git -C "$r" rev-parse HEAD 2>/dev/null)
+                  [ "$now" = "$rsha" ] || stale="$stale $rname (reviewed ${rsha:0:7}, now ${now:0:7})"
+                fi
+              done
+              [ "$found" = 1 ] || stale="$stale $rname (checkout not found)"
+            done <<EOF
+$(printf '%s\n' "$fm" | grep -E '^review_commit\.')
+EOF
+            if [ "$seenany" = 0 ]; then
+              echo "  REVIEW COMMIT NOT RECORDED: this review was recorded before the reviewed commit was, so"
+              echo "  it cannot be shown to cover the code being handed back. Record a review with the current tool."
+              bad=1
+            elif [ -n "$stale" ]; then
+              echo "  REVIEW IS STALE: the code has moved since it was reviewed:$stale"
+              echo "  What is being handed back is not what was reviewed. Run another independent review and record it:"
+              echo "    bash .claude/tools/baseline.sh review $task completed <code-review|codex-relay> <result>"
+              bad=1
+            else
+              echo "  and the code still matches the reviewed commit"
+            fi ;;
           waived-by-owner) echo "tier 3: independent review WAIVED by the owner: $detail" ;;
           *) echo "TIER 3 CONTRACT INCOMPLETE: no independent review and no owner waiver is recorded."
              echo "  Run one of the independent routes and record it, or ask the owner and record their waiver:"
