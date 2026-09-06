@@ -6,9 +6,10 @@ assistant, this file tells you what to do, in what order, and what to say before
 
 **Every step is optional and skipping is normal.** Skipping a step never ends the setup. When a
 step is approved, do the whole step; do not confirm file by file. Say the limits once, near the
-front, then stop repeating them: this kit enforces exactly four things through hooks, one
-more through a `verify.sh` check over the knowledge base, everything else is advice, and none of
-these hooks sees a browser, an MCP call, chat, or a shared folder.
+front, then stop repeating them: four things are enforced as the work happens, by hooks; the rest of
+what `verify.sh` checks is enforced when somebody runs it; everything else is advice. None of these
+four hooks watches a browser, an MCP call, chat, or a shared folder, which is a choice about what
+this kit matches rather than a limit of the platform.
 
 **Say this before creating anything:** what will be created (a `.claude/` folder, a knowledge base,
 a disposable `working/` folder, a few ignore and attribute lines), that nothing is pushed anywhere,
@@ -94,7 +95,9 @@ deletes. `--check` shows what an update would do without doing it.
 The installer copies `.claude/` without overwriting anything, writes `settings.json` with hook
 commands for this operating system (or `settings.kit.json` beside an existing one, to merge by
 hand), creates `working/README.md`, the knowledge-base skeleton, the ignore and attribute lines,
-and for shape B the `.workspace` marker. It ends by running `verify.sh`.
+and for shape B the `.workspace` marker. It ends by running `verify.sh`, and prints
+`INSTALLED AND VERIFIED` only if that passes; anything else exits non-zero and says the files are
+copied but not verified. Do not report an install as done on a non-zero exit.
 
 **Then tell the human to start a new session.** Rules and hooks load at session start. On one
 build they were observed to hot-load; do not rely on it.
@@ -149,7 +152,7 @@ Run these and report the results honestly. Do not report a pass you did not obse
 | 2 | touch a file under the knowledge base | the path-scoped rule's content becomes available; before touching, it was not |
 | 3 | try to write a fake but well-formed token through the editing tool | blocked, exit 2, message naming the kind and not the value |
 | 4 | try to write `const password = process.argv[2]` | not blocked |
-| 5 | delete an assertion from a test file and end a turn | the Stop hook blocks and names the file |
+| 5 | delete an assertion from a test file and end a turn, then try to end the turn again without repairing it | the Stop hook blocks and names the file, and blocks again on the second attempt rather than waving it through |
 | 6 | `verify.sh` on a healthy tree | all pass, exit 0 |
 | 7 | break one thing on purpose: remove a hook file, add rule lines past the baseline | the matching check fails and the message says what to do |
 | 8 | run `verify.sh` from a different directory and from `/` | same result; no confident failures about a workspace that is fine |
@@ -175,7 +178,7 @@ Run these and report the results honestly. Do not report a pass you did not obse
 
 ## 9 · The limits, once
 
-The hooks see the editing tools and the two shells, nothing else. Nothing here has been shown by
-comparison to help; the measurements behind the kit are one maintainer's, on Windows, and are dated
-in its knowledge base. A harness that claims more protection than it has is the exact failure it
+These four hooks watch the editing tools and the two shells and nothing else. Nothing here has been
+shown by comparison to help; the measurements behind the kit are one maintainer's, on Windows and
+Linux CI, and are dated in its knowledge base. Nobody but its author has installed or upgraded it. A harness that claims more protection than it has is the exact failure it
 exists to catch, so write your own limits down the same way, in the project's `99-pending.md`.

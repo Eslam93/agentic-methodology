@@ -34,7 +34,9 @@ This kit answers with two things and one boundary between them:
 
 Volatile status, where the last session got to and what to resume, lives in a third folder,
 `working/`, which is disposable and never committed. **Durable facts never share a folder with
-volatile status.** That boundary is the design.
+volatile status.** That boundary is the design. It is also per checkout: because everything there is
+ignored by git, a linked worktree starts without it, so a task agreed in one does not travel to
+another, and nothing is copied between them.
 
 ## What is in the box
 
@@ -52,12 +54,14 @@ Four rules, ten skills, four hooks, nine tools. Install is a copy, and an update
 | **`/codex-relay`** | an optional second model, read-only, briefed in full, answering verdict first, with pushback allowed only with evidence |
 | **`/test-guide`** `/pr` `/board` | plain-English test steps that double as the pull request's "How to test"; a well-formed pull request; a tracker update that proposes and stops |
 | **`/explain`** `/summarize` | the real version at a named audience, with a verify mode that re-checks a claim against the current tree; and the short version, without losing the caveats |
-| **four hooks** | a secret value is blocked before it is written; a test weakened, skipped, or deleted blocks the turn, measured from the baseline of the task this session carries when there is one, and from `HEAD` otherwise; a destructive-command list that starts empty and grows from incidents; that same task's brief re-read after a compaction |
-| **`baseline.sh`** | seals the task's starting point into the agreed brief at the owner's yes, the approval time, the tier, the digest of the agreed text, the commit of every checkout, and a second digest over all of those so the starting point itself cannot be moved by a hand edit, beside a list of the files that were already dirty; and, when the host gives a session id, binds that brief to the Claude session, so both hooks know which agreement this session is carrying instead of taking the newest file. Unbound, both fall back and say so. `check` at hand-back reads it all back, and refuses a Tier 3 task with neither a completed independent review nor an owner's waiver |
+| **four hooks** | a secret value is blocked before it is written; a test weakened, skipped, or deleted blocks the turn, measured from the baseline of the task this session carries when there is one, and from `HEAD` otherwise, and it keeps blocking until the test is repaired or you authorize that exact change; a destructive-command list that starts empty and grows from incidents; that same task's brief re-read after a compaction |
+| **`baseline.sh`** | seals the task's starting point into the agreed brief at the owner's yes: the approval time, the tier, the digest of the agreed text, the commit of every checkout, and a second digest over all of those, so the starting point cannot be moved by a hand edit. It lists the files that were already dirty, and binds the brief to this Claude session so both hooks know which agreement is in flight rather than taking the newest file; unbound, both fall back and say so. `check` at hand-back reads it back and refuses a top-tier task with neither a completed independent review nor an owner's waiver, or one whose code has moved past the commit that was reviewed. `allow-test-change` is the one escape from the Stop hook: it records a file, the exact content it ends at, and why, so that change is allowed and the next one is not |
 | **`knowledge-check.sh`** | the knowledge base's mechanical floor: every durable page carries the header the rules require, the values with an objective shape have it, and every reference it can identify without guessing resolves, which is local links, page-relative references, `repo:` paths, `commit:` shas, and decision codes. It also proves a short curated list of counts the README states still matches the tree. It decides structure, never truth |
 | **`verify.sh`** | the checks that exist here, a canary that must fail, and three test suites that prove the hooks, the knowledge checks, and the updater can each go red |
 
-Every hook ships in PowerShell and in Bash. Windows was the first platform, not an afterthought.
+Every hook ships in PowerShell and in Bash, because the host launches whichever the machine runs.
+The tools are Bash, so Windows needs Git Bash; that is stated again under Install, because it is the
+one thing that will stop you.
 
 ## Install
 
@@ -75,8 +79,10 @@ those are what the host launches.
 
 The installer copies `.claude/` without overwriting anything, writes the hook settings for your
 operating system, creates `working/` and the knowledge-base skeleton, adds the ignore and attribute
-lines, and ends by running `verify.sh`. Then open Claude Code on the project, **start a new
-session**, and say:
+lines, and ends by running `verify.sh`. It prints `INSTALLED AND VERIFIED` only when that passes; if
+anything is red it says the files are copied but not verified, and exits non-zero, because a copied
+tree whose hooks are not wired is not a working harness. Then open Claude Code on the project,
+**start a new session**, and say:
 
 > read START-HERE.md in `kit/` and follow it
 
@@ -109,7 +115,8 @@ disposable folder.
 3. **Size the job with a tier, and a hard floor.** Auth, payments, secrets, migrations, public
    contracts, security controls, and cross-module architecture are always the top tier and cannot
    be tiered down. The top tier finishes one of two ways: one independent review completed, or the
-   owner waived it in their own words. Reaching the end without either is not a waiver.
+   owner waived it in their own words. Reaching the end without either is not a waiver, and a review
+   covers the commit it read: change the code afterwards and it needs reviewing again.
 4. **Evidence settles findings, in a fixed order.** A deterministic failing check, then the
    reviewer's own recompute, then a spec line nobody in the loop wrote, then a builder-produced
    result, then model judgment alone, which settles nothing. A citation never settles a finding by
@@ -191,8 +198,10 @@ you changed has deliberately stepped outside automatic replacement and stays exa
 until you reconcile it yourself. That also means **a customized file does not receive later upstream
 changes**: the updater tells you which files diverged, and the reconciliation is yours.
 
-An update that preserves your files still succeeded, and exits 0. A non-zero exit means the updater
-could not do its job, not that you have local changes.
+Preserving your files is a success, not a failure: an update that skips everything you changed and
+verifies clean exits 0 and says `UPDATED AND VERIFIED`. A non-zero exit means one of two things, and
+the output says which: a file could not be written, or verification is red afterwards. Neither is
+"you have local changes".
 
 If you installed before the manifest existed, the first update adopts every file that is already
 byte-identical to the new release, and leaves everything else alone: without a record of what you
@@ -200,17 +209,23 @@ started from, "original" and "customized" cannot be told apart, and the installe
 
 ## Status and limits
 
-`v2.0.0`, 2026-09-05. Seventeen acceptance tests, seventeen passed, seven of them live on the Claude
-Code desktop app rather than by hand: the secret guard blocked a real write and allowed the
-false-positive case, the Stop hook blocked a weakened test, the path-scoped rule loaded on a real
-read, the resume hook fired on a real compaction, the goal evaluator blocked a failing stop, and
-`/board` proposed a close and stopped. The exact steps and the caveats per row are on the acceptance
-page. CI runs the checks, the canary, and the test suites on Linux on every push.
+The last tag is `v2.0.0`, 2026-09-05. `main` has moved past it: the task baseline, the knowledge
+checks, the update path, and several rounds of hardening all landed after it, each with its own page
+in the knowledge base. Take `main`.
+
+Seventeen acceptance tests, seventeen passed, seven of them live on the Claude Code desktop app
+rather than by hand: the secret guard blocked a real write and allowed the false-positive case, the
+Stop hook blocked a weakened test, the path-scoped rule loaded on a real read, the resume hook fired
+on a real compaction, the goal evaluator blocked a failing stop, and `/board` proposed a close and
+stopped. The exact steps and the caveats per row are on the acceptance page. CI runs the checks, the
+canary, and the test suites on Linux on every push.
 
 The limits, stated once: nothing here has been shown by comparison to help. The measurements are one
-maintainer's, on Windows and Linux CI, dated in the knowledge base. The hooks see the editing tools
-and the two shells, nothing else; a shell redirect or an MCP call passes them untouched. If you
-install it, write your own limits down the same way.
+maintainer's, on Windows and Linux CI, dated in the knowledge base. **These four hooks** watch the
+editing tools and the two shells and nothing else, so a shell redirect or an MCP call passes them
+untouched; that is a choice about what this kit matches, not a limit of the platform. No adopter has
+installed or upgraded this but its author. If you install it, write your own limits down the same
+way.
 
 ## Repository map
 
@@ -222,6 +237,7 @@ install it, write your own limits down the same way.
   tools/            layout.sh · verify.sh · baseline.sh · knowledge-check.sh · install.sh · install.ps1
                     hooks.test.sh · knowledge-check.test.sh · install.test.sh · stop-hook-canary.test.js
   install-manifest.txt  what the installer gave you, so an update can tell your edits from ours
+  knowledge-drift.conf  this repository's curated list of counts the README states
   settings.json     the hook wiring
 docs/knowledge-base/  this repository's knowledge base
 working/            disposable; only its README is committed
