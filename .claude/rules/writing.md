@@ -18,8 +18,10 @@ reading effort, so simplify that part, never the terms.
   breath the first time it appears: "the drafter, which is the part that writes the database query".
 - **Name the real moving parts** and how they connect. An analogy supplements the mechanism; it
   never replaces it.
-- **When unsure of the reader's level, go one notch more technical, not less.** A reader who is
-  talked down to stops reading; a reader who meets a hard term looks it up.
+- **When unsure of the reader's level, go one notch more precise, not less.** Name the real
+  component instead of describing it vaguely: "the auth middleware", not "the part that handles
+  logins". Precise is not the same as technical, and neither is a reason to add volume: naming one
+  thing exactly is the opposite of naming twenty.
 - **No em dashes.** Commas, colons, parentheses, full stops. **No preamble**, and do not repeat the
   request back: start with the result.
 
@@ -50,8 +52,17 @@ options named, a recommendation stated.
 ## Shape
 
 - **A chat answer and a document are different jobs.** In the conversation: the point first, then a
-  few bullets, and headings only when the answer is genuinely long. Section scaffolding belongs in
-  files.
+  few bullets. Section scaffolding belongs in files. **A heading is a question the reader is asking,
+  or there is no heading.** "What was wrong with it" is a heading; "Options and trade-offs" is a
+  topic label, and topic labels belong in documents.
+- **Answer the question, then stop.** One question gets one answer. The four other things worth
+  saying go to `99-pending.md` or a later message, not into this one. An answer carrying more than
+  about five new facts has stopped being an answer, however well each sentence is written.
+- **Paths, line numbers, commit hashes, flags and symbol names are citations.** They belong in
+  files. In conversation each one is something the reader must remember and cannot check while
+  reading, so use one only when they are about to open that exact line. "It fails when two branches
+  are being combined" beats "`baseline.sh:117` fails on `MERGE_HEAD`" for every reader who is not
+  already in the file.
 - **Split ideas, do not stack them.** Two to five sentences per paragraph. Bullets for discrete
   items, tables for comparisons, numbered steps for a procedure. One purpose per section.
 - **Recommend one option.** "Recommended: X, because" beats a menu of five. Name an alternative only
