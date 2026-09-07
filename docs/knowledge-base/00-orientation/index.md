@@ -43,6 +43,7 @@ reverify_when: Every time a page is added, superseded, or removed
 | `_investigations/2026-09-05-task-baseline/methodology.md` | what the sealed task baseline records, what the Stop hook mechanically detects since it, what `/work` only instructs, and the runs that proved the two cases a `HEAD` comparison cannot detect |
 | `_investigations/2026-09-05-active-task/methodology.md` | how a Claude session says which task it is carrying, where the session id comes from, and the runs that prove a relay brief can no longer be restored as the agreement |
 | `_investigations/2026-09-05-installer-update/methodology.md` | how a copied kit is upgraded without destroying local changes, what the manifest records, why project-local copy stays canonical now that plugins exist, and the runs behind each update state |
+| `_investigations/2026-09-07-confirming-evidence/methodology.md` | why a Tier 3 change passed three design reviews, 240 tests and its own mutation test while failing open on the case it existed to prevent; the two method defects that caused it |
 | `_investigations/2026-09-05-knowledge-integrity/methodology.md` | which knowledge-base rules became executable checks, which stayed conventions and why, the measurement that put the line there, and the drift the checks found on arrival |
 | `_investigations/2026-09-05-tier3-review/methodology.md` | what the Tier 3 review contract requires, which part a check decides and which part only the people can, and the runs for reviewed, waived, and neither |
 | `99-pending.md` | everything found and not acted on |
