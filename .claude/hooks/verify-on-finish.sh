@@ -173,11 +173,12 @@ if [ -n "$briefFile" ]; then
       else
         reason="seal_sha256 does not match the approval fields now in the brief"
       fi
-      # A brief with no seal digest was sealed before this existed: that is an absent legacy seal
-      # and keeps the old path. A digest that does not match is a different thing entirely. The
-      # comparison base itself may have been moved, so falling back to HEAD would hand the edit
-      # exactly what it was after: every weakening before the new commit disappearing. There is no
-      # safe base left, so the turn stops here and a person decides.
+      # Both cases stop here. A brief that records a baseline with no digest is not a legacy seal
+      # to be trusted: deleting one line would otherwise turn any sealed brief into one. A digest
+      # that does not match is the other half of the same problem. Either way the comparison base
+      # itself may have been moved, so falling back to HEAD would hand the edit exactly what it was
+      # after: every weakening before the new commit disappearing. There is no safe base left, so
+      # the turn stops here and a person decides.
       {
         echo "STOP: the sealed approval in $briefName cannot be trusted."
         echo
