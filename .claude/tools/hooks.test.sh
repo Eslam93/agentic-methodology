@@ -442,6 +442,64 @@ for shell in $shells; do
   printf 'working/task-1/brief.md\n' > "$W/working/active-tasks/$SIDA"
 done
 
+# ---- the test-file shapes the matcher claims to recognise ---------------------------------------
+# is_test_file has four branches. Before this block every test file the suite created was a
+# .test.js inside a tests/ folder, so three branches were carried by no case at all: restricting
+# the pattern to \.test\. alone left the suite at 207 passed, 0 failed, exit 0, measured
+# 2026-09-07. Each fixture below matches exactly one branch and no other, so a branch that stops
+# working takes its own case down with it and nothing else.
+echo "test-file shapes"
+TS="$T/shapes"; mkdir -p "$TS/src" "$TS/tests"
+git -C "$TS" init -q 2>/dev/null
+git -C "$TS" config core.autocrlf false
+gits() { git -C "$TS" -c user.email=t@t -c user.name=t "$@"; }
+printf 'working/\n' > "$TS/.gitignore"
+# .spec. only: not .test., not under tests/, not a .cs
+printf 'describe("s", () => {\n  it("a", () => { expect(1).toBe(1); });\n  it("b", () => { expect(2).toBe(2); });\n  it("c", () => { expect(3).toBe(3); });\n});\n' > "$TS/src/thing.spec.js"
+# Tests.cs only: not .test., not .spec., not under tests/
+printf 'public class WidgetTests {\n  [Fact] public void A() { Assert.True(true); }\n  [Fact] public void B() { Assert.True(true); }\n  [Fact] public void C() { Assert.True(true); }\n}\n' > "$TS/src/WidgetTests.cs"
+# the tests/ folder only: no .test., no .spec., no .cs in the name
+printf 'def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 2\n\ndef test_c():\n    assert 3 == 3\n' > "$TS/tests/check_things.py"
+gits add -A >/dev/null 2>&1; gits commit -qm shapes >/dev/null 2>&1
+
+# the fixtures must each match one branch and only one, or a case could pass on the wrong branch
+for pair in "src/thing.spec.js:spec" "src/WidgetTests.cs:cs" "tests/check_things.py:folder"; do
+  f="${pair%%:*}"
+  total=$((total+1))
+  hits=0
+  printf '%s' "$f" | grep -Eiq '\.test\.'            && hits=$((hits+1))
+  printf '%s' "$f" | grep -Eiq '\.spec\.'            && hits=$((hits+1))
+  printf '%s' "$f" | grep -Eiq 'Tests?\.cs$'         && hits=$((hits+1))
+  printf '%s' "$f" | grep -Eiq '(^|/)(tests?|__tests__)/' && hits=$((hits+1))
+  if [ "$hits" -eq 1 ]; then echo "  ok    fixture: $f matches exactly one branch of is_test_file"
+  else echo "  FAIL  fixture: $f matches $hits branches, so its case cannot name which one broke"; fails=$((fails+1)); fi
+done
+
+mkdir -p "$TS/working/shape-task"
+printf '# brief shape-task\noutcome: tests stay whole\n' > "$TS/working/shape-task/brief.md"
+(cd "$TS" && CLAUDE_CODE_SESSION_ID="$SIDA" bash "$HERE/baseline.sh" seal shape-task 2 >"$T/shapes.seal" 2>&1)
+total=$((total+1))
+if grep -q '^baseline_commit\.' "$TS/working/shape-task/brief.md"; then echo "  ok    the shapes fixture sealed"
+else echo "  FAIL  the shapes fixture did not seal"; fails=$((fails+1)); sed 's/^/        /' "$T/shapes.seal"; fi
+
+# one assertion removed from each, committed, so only the baseline comparison can see it
+printf 'describe("s", () => {\n  it("a", () => { expect(1).toBe(1); });\n  it("b", () => { expect(2).toBe(2); });\n});\n' > "$TS/src/thing.spec.js"
+printf 'public class WidgetTests {\n  [Fact] public void A() { Assert.True(true); }\n  [Fact] public void B() { Assert.True(true); }\n}\n' > "$TS/src/WidgetTests.cs"
+printf 'def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 2\n' > "$TS/tests/check_things.py"
+gits commit -qam weaken-all >/dev/null 2>&1
+
+for shell in $shells; do
+  if [ "$shell" = ps1 ]; then scwd="$(winpath "$TS")"; else scwd="$TS"; fi
+  p_shapes='{"cwd":"'"$scwd"'","session_id":"'"$SIDA"'","stop_hook_active":false}'
+  case_ "$shell: a weakening in all three shapes blocks"  2 "$(run $shell verify-on-finish "$p_shapes")"
+  for pair in "thing.spec.js:.spec. branch" "WidgetTests.cs:Tests.cs branch" "check_things.py:tests/ folder branch"; do
+    f="${pair%%:*}"; label="${pair#*:}"
+    total=$((total+1))
+    if grep -q "$f" "$T/err"; then echo "  ok    $shell: the block names $f, so the $label works"
+    else echo "  FAIL  $shell: the block never names $f, so the $label is not carried by any case"; fails=$((fails+1)); fi
+  done
+done
+
 # ---- linked git worktrees ----------------------------------------------------------------------
 # A linked worktree carries a .git FILE, not a directory. Detecting a checkout by testing for a
 # directory made every worktree invisible: seal refused to run, and the Stop hook exited 0 on a
