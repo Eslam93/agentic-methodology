@@ -26,6 +26,10 @@ This is the index of what is open, not the evidence for it.
 
 ## 3 · We can do these ourselves
 
+- `P1` The README Install block says `bash kit/.claude/tools/install.sh`, and `verify-on-finish.ps1` lines 264 and 428 print `bash .claude/tools/baseline.sh` for pasting. Typed into PowerShell or cmd on a machine with WSL, that `bash` is WSL: `install.sh` would run under Linux and write bash hook commands into a Windows repository. Say "from Git Bash" in both. Found 2026-09-13 by the independent review of the `install.ps1` Git Bash fix; read, not run.
+- `P2` `install.ps1` fails on a UNC target before verification: `(Resolve-Path $Target).Path` returns a `Microsoft.PowerShell.Core\FileSystem::\\host\...` provider path, which `[IO.File]::WriteAllText` rejects in `Write-Manifest`. Use `.ProviderPath`. Measured 2026-09-13 by the same review against `//localhost/D$/...`; the defect predates the fix.
+- `P2` `install.ps1 -Update` exits without running `verify.sh`, while `install.sh --update` runs it, so the two installers disagree after an update. Found 2026-09-13 by the same review, by reading.
+
 - `P2` `explain` and `summarize` carry an `allowed-tools` list that reads as a restriction but only pre-approves those tools, and `Bash(cat *)` pre-approves a `cat >` overwrite. Drop the lists or say what they are for. Evidence: the front matter of `.claude/skills/explain/SKILL.md` and `.claude/skills/summarize/SKILL.md`, 2026-09-05.
 - `P1` Promote or prune the auto-memory notes on the owner's other repositories: 84 notes on one project used as a knowledge base, 6 on the public site including two stale status notes. Evidence: the investigation page.
 - `P2` Independent re-verification of the v1 research citations, deferred since 2026-06. Evidence: `_readings/evidence-base.md`.

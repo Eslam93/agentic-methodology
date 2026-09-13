@@ -314,6 +314,37 @@ if [ "$have_ps" = 1 ]; then
     ok_ "ps: the same managed lines and hashes as bash"
   else bad_ "ps: the same managed lines and hashes as bash" \
       "$(diff <(grep '^managed ' "$T/from-bash") <(grep '^managed ' "$P/$MAN") | head -4)"; fi
+
+  # C:\Windows\System32\bash.exe is the WSL launcher, and wherever WSL is installed it comes before
+  # Git on PATH. It runs Linux and cannot read a Windows path, so an installer that takes the first
+  # bash it finds reports every healthy install as red. The suite itself runs with Git Bash leading
+  # PATH, which is why the plain cases above never saw it. The stand-in answers like WSL did on
+  # 2026-09-13: `-c 'uname -s'` prints Linux and succeeds, and running a D:\ script path fails.
+  wsl_like() {
+    mkdir -p "$1"
+    printf '@if "%%~1"=="-c" (echo Linux& exit /b 0)\r\n@echo /bin/bash: %%1: No such file or directory\r\n@exit /b 127\r\n' > "$1/bash.cmd"
+  }
+  echo "powershell - verification runs through Git Bash when a WSL-like bash leads PATH"
+  wsl_like "$T/fakebin"
+  new_kit; new_proj
+  printf '#!/usr/bin/env bash\necho "verify ran under $(uname -s)"\nexit 0\n' > "$K/.claude/tools/verify.sh"
+  rc=$(PATH="$T/fakebin:$PATH" install_ps)
+  is "ps: a non-Git bash first on PATH does not fail the install" "$rc" 0
+  has "ps: verify.sh really ran, under Git Bash"                  "$T/out" "verify ran under M"
+  has "ps: and the install says so"                               "$T/out" "INSTALLED AND VERIFIED"
+
+  # With no Git anywhere, the only bash left is the impostor. It must be refused by its uname answer,
+  # not merely outranked by Git's own folder, which is what the case above exercises.
+  echo "powershell - a WSL-like bash is refused when no Git Bash exists"
+  new_kit; new_proj
+  ps1="$(winpath "$K/.claude/tools/install.ps1")"; tgt="$(winpath "$P")"; nogit="$(winpath "$T/nogit")"
+  mkdir -p "$T/nogit"
+  env PATH="$T/fakebin:/c/windows/system32:/c/windows:/c/windows/System32/WindowsPowerShell/v1.0" \
+      ProgramFiles="$nogit" ProgramW6432="$nogit" "ProgramFiles(x86)=$nogit" LOCALAPPDATA="$nogit" \
+      powershell -NoProfile -ExecutionPolicy Bypass -File "$ps1" -Target "$tgt" > "$T/out" 2>&1; rc=$?
+  is    "ps: exits non-zero"                          "$rc" 1
+  has   "ps: says Git Bash was not found"             "$T/out" "Git Bash was not found"
+  hasnt "ps: never ran verify through the impostor"   "$T/out" "verification is red"
 else
   echo "powershell not on PATH; the install.ps1 cases did not run"
 fi

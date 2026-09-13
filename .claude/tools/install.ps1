@@ -7,8 +7,8 @@
 
     Same behaviour as install.sh: copies .claude/ without overwriting, writes settings.json with
     PowerShell hook commands (or settings.kit.json beside an existing one), creates working/, the
-    knowledge-base skeleton, the ignore and attribute lines, then runs verify.sh through bash if
-    bash is available (Git for Windows provides it).
+    knowledge-base skeleton, the ignore and attribute lines, then runs verify.sh through Git Bash
+    if it can find one (Git for Windows provides it; the WSL bash.exe is never used).
 
     THE UPDATE MODEL, identical to install.sh and sharing its manifest format. The kit is copied
     into the adopter's repository on purpose, so the rules and hooks that govern a project are
@@ -398,9 +398,61 @@ Write-Output 'Rules and hooks load at session start, so start a new session afte
 Write-Output ''
 # The installer's own success is not the same as a usable harness. A copied tree whose hooks are
 # not wired, or whose verification is red, is "files are here, now reconcile", not "installed".
-$bash = (Get-Command bash -ErrorAction SilentlyContinue).Source
+#
+# Git Bash specifically, never the first bash on PATH. On Windows, System32\bash.exe and the
+# WindowsApps alias are the WSL launcher, which comes before Git on PATH wherever WSL is installed.
+# It runs Linux, reads D:\x as D:x, and answers "No such file or directory", so a healthy install
+# was reported red (measured 2026-09-13). A candidate counts only if `uname -s` says MINGW, MSYS,
+# or CYGWIN, which WSL never does: it answers Linux. Elsewhere (pwsh on Linux or macOS) the bash on
+# PATH is the native one.
+# PSEdition is empty before 5.1 and $IsWindows exists only from 6, so ask the runtime instead.
+$onWindows = [Environment]::OSVersion.Platform -eq 'Win32NT'
+function Find-GitBash {
+    if (-not $onWindows) {
+        return (Get-Command bash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    }
+    # Every native call here may write to stderr; under 'Stop' that would be terminating.
+    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try {
+        # Start from git itself. <Git>\cmd\git.exe and <Git>\mingw64\bin\git.exe sit under the root
+        # that holds bin\bash.exe; git --exec-path also reaches it through a Scoop shim.
+        $starts = @()
+        foreach ($git in @(Get-Command git -CommandType Application -All -ErrorAction SilentlyContinue)) {
+            $starts += (Split-Path -Parent $git.Source)
+            try {
+                $exec = & $git.Source --exec-path 2>$null
+                if ($LASTEXITCODE -eq 0 -and $exec) { $starts += ((@($exec) -join '').Trim() -replace '/', '\') }
+            } catch { }
+        }
+        $candidates = New-Object System.Collections.Generic.List[string]
+        foreach ($dir in $starts) {
+            for ($i = 0; $i -lt 4 -and $dir; $i++) {
+                $candidates.Add((Join-Path $dir 'bin\bash.exe'))
+                $dir = Split-Path -Parent $dir
+            }
+        }
+        foreach ($root in @($env:ProgramFiles, $env:ProgramW6432, ${env:ProgramFiles(x86)})) {
+            if ($root) { $candidates.Add((Join-Path $root 'Git\bin\bash.exe')) }
+        }
+        if ($env:LOCALAPPDATA) { $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\bash.exe')) }
+        foreach ($b in @(Get-Command bash -CommandType Application -All -ErrorAction SilentlyContinue)) {
+            if ($b.Source -notmatch '\\(System32|WindowsApps)\\') { $candidates.Add($b.Source) }
+        }
+        foreach ($c in ($candidates | Select-Object -Unique)) {
+            if (-not (Test-Path -LiteralPath $c -PathType Leaf)) { continue }
+            # One candidate that cannot start must not end the search for the next one.
+            try { $u = & $c -c 'uname -s' 2>$null } catch { continue }
+            if ($LASTEXITCODE -eq 0 -and ((@($u) -join '') -match '^(MINGW|MSYS|CYGWIN)')) { return $c }
+        }
+    } finally { $ErrorActionPreference = $prev }
+    return $null
+}
+$bash = Find-GitBash
 $vrc = $null
-if ($bash) { & $bash (Join-Path $Target '.claude/tools/verify.sh'); $vrc = $LASTEXITCODE }
+# Forward slashes on Windows: an MSYS bash reads D:/x/y as a path, and a backslash is a shell escape.
+$verifyPath = Join-Path $Target '.claude/tools/verify.sh'
+if ($onWindows) { $verifyPath = $verifyPath -replace '\\', '/' }
+if ($bash) { & $bash $verifyPath; $vrc = $LASTEXITCODE }
 Write-Output ''
 if ($rFailed.Count -gt 0) {
     Write-Output 'NOT INSTALLED: some managed files could not be written, listed above. The manifest does'
@@ -408,8 +460,9 @@ if ($rFailed.Count -gt 0) {
     exit 1
 }
 if ($null -eq $vrc) {
-    Write-Output 'FILES COPIED, NOT YET VERIFIED: bash was not found, so verify.sh could not run. The'
-    Write-Output 'methodology tools are Bash scripts, so Git Bash is required to use this harness at all.'
+    Write-Output 'FILES COPIED, NOT YET VERIFIED: Git Bash was not found, so verify.sh could not run. A WSL'
+    Write-Output 'bash does not count: it runs Linux and cannot read this Windows path. The methodology'
+    Write-Output 'tools are Bash scripts, so Git Bash is required to use this harness at all.'
     Write-Output 'Install Git for Windows, then run .claude/tools/verify.sh from Git Bash.'
     exit 1
 }

@@ -47,6 +47,11 @@ search for the same root cause. Same cause with a different symptom means merge,
 - **Piping a string to a native command prepends a UTF-8 BOM**, so the far side fails on the first
   token only. Use `scp`, or write the file first with a BOM-less encoding. 2026-08-16.
 - **No `&&`, `||`, `??`, or ternary.** Parse errors, not warnings.
+- **A healthy install printed "FILES COPIED, NOT YET VERIFIED" and exited 1: `Get-Command bash`
+  returned WSL.** `System32\bash.exe` is the WSL launcher and comes before Git on PATH wherever WSL
+  is installed; it runs Linux and reads `D:\x` as `D:x`. Tests launched from Git Bash never see it,
+  because Git leads PATH there. Find bash from git's install folder and accept it only if
+  `uname -s` says MINGW, MSYS, or CYGWIN. 2026-09-13.
 
 - **A `.ps1` without a UTF-8 BOM is read in the ANSI codepage by PowerShell 5.1**, so every
   non-ASCII character in the source becomes two wrong ones, and anything the script writes carries
