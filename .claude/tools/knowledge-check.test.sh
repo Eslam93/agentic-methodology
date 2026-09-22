@@ -273,6 +273,19 @@ printf 'Evidence: `repo:repos/one/missing.txt`.\n' >> "$wpage"
 got="$(bash "$KC" "$W" >"$T/out" 2>&1; echo $?)"
 check "a repo: path missing from the workspace fails"           1 "referenced repository path does not exist: repos/one/missing.txt"
 
+echo "capabilities"
+mkcap() {
+  mk "$R"
+  hdr "$KB/00-orientation/capabilities.md" "What each capability token grants and how to prove it"
+  printf '\n| Token | Blast | Grants | Proof (read-only) | Expected | Obtain |\n|---|---|---|---|---|---|\n| `TOOL-GIT` | 🟢 | clone and inspect | `git --version` | ^git version | install Git |\n' >> "$KB/00-orientation/capabilities.md"
+}
+mkcap; awk '{print} /^title:/{print "requires: `TOOL-GIT`"}' "$KB/_readings/study.md" > "$T/x" && mv "$T/x" "$KB/_readings/study.md"
+run "$R"; check "a page requiring a defined token passes"                    0 "references resolve"
+mkcap; awk '{print} /^title:/{print "requires: `TOOL-GIT`, `TOOL-NOPE`"}' "$KB/_readings/study.md" > "$T/x" && mv "$T/x" "$KB/_readings/study.md"
+run "$R"; check "a page requiring an undefined token fails, naming it"       1 "does not define: TOOL-NOPE"
+mk "$R"; awk '{print} /^title:/{print "requires: `TOOL-GIT`"}' "$KB/_readings/study.md" > "$T/x" && mv "$T/x" "$KB/_readings/study.md"
+run "$R"; check "requiring a token with no capabilities page fails"         1 "no capabilities page"
+
 echo "the base itself"
 mk "$R"; rm -rf "$R/docs"; run "$R"; check "no knowledge base at all"                 1 "no knowledge base"
 mk "$R"; rm -f "$KB"/*.md "$KB"/*/*.md; run "$R"; check "a base with no page at all"  1 "no Markdown page found"

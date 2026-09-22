@@ -86,6 +86,26 @@ valid, not correct.
 2. **Describe the system, not the people.** Knowledge concentration is a property of the code.
 3. **Keep negative results and contradictions.**
 
+## The estate: what a program answers, a page does not
+
+- **A value the estate can compute is a check, not a sentence.** A deployed version, a certificate
+  expiry, a restart count, a quota, a licence date: write the probe into
+  `.claude/tools/status.project.sh` and cite the check. A date no system can answer (a vendor's
+  billing change, a renewal set by hand) goes into `.claude/deadlines.conf` with its lead time and
+  its owner. `status.sh` runs both at every `/orient`. Measured 2026-08-24 on one installation:
+  five of seven such sentences were stale or wrong within weeks of being written.
+- **A runbook states its capabilities, not its author.** The header field `requires:` names tokens
+  from `00-orientation/capabilities.md`, one table row per token: a blast marker (🟢 read-only or
+  non-production, 🟡 changes non-production or reads production data, 🔴 touches production), what
+  it grants, a read-only proof command, the expected output, and how to obtain it. `preflight.sh -c
+  <tokens>` proves them before the page is followed; `knowledge-check.sh` refuses a token the page
+  does not define. Where nobody has written how a capability is obtained, the row says UNRESOLVED
+  and names who to ask; an invented procedure is worse than an admitted gap.
+- **Probes live beside the pages.** `_probes/` holds runnable, read-only scripts that re-measure a
+  claim; each opens with a `Requires:` line and ends with the traps that cost a run, and
+  `_probes/README.md` says what each one answers. An investigation cites the probe that produced its
+  numbers, so the number can be produced again.
+
 ## `99-pending.md`
 
 One line, same turn, without asking. Grouped by who can act: only the project team · needs a

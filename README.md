@@ -40,7 +40,7 @@ another, and nothing is copied between them.
 
 ## What is in the box
 
-Four rules, ten skills, four hooks, nine tools. Install is a copy, and an update replaces only what you have not changed.
+Four rules, ten skills, four hooks, twelve tools. Install is a copy, and an update replaces only what you have not changed.
 
 | Part | What it does |
 |---|---|
@@ -57,7 +57,9 @@ Four rules, ten skills, four hooks, nine tools. Install is a copy, and an update
 | **four hooks** | a secret value is blocked before it is written; a test weakened, skipped, or deleted blocks the turn, measured from the baseline of the task this session carries when there is one, and from `HEAD` otherwise, and it keeps blocking until the test is repaired or you authorize that exact change; a destructive-command list that starts empty and grows from incidents; that same task's brief re-read after a compaction |
 | **`baseline.sh`** | seals the task's starting point into the agreed brief at the owner's yes: the approval time, the tier, the digest of the agreed text, the commit of every checkout, and a second digest over all of those, so the starting point cannot be moved by a hand edit. It lists the files that were already dirty, and binds the brief to this Claude session so both hooks know which agreement is in flight rather than taking the newest file; unbound, both fall back and say so. `check` at hand-back reads it back and refuses a top-tier task with neither a completed independent review nor an owner's waiver, or one whose code has moved past the commit that was reviewed. `allow-test-change` is the one escape from the Stop hook: it records a file, the exact content it ends at, and why, so that change is allowed and the next one is not |
 | **`knowledge-check.sh`** | the knowledge base's mechanical floor: every durable page carries the header the rules require, the values with an objective shape have it, and every reference it can identify without guessing resolves, which is local links, page-relative references, `repo:` paths, `commit:` shas, and decision codes. It also proves a short curated list of counts the README states still matches the tree. It decides structure, never truth |
-| **`verify.sh`** | the checks that exist here, a canary that must fail, and three test suites that prove the hooks, the knowledge checks, and the updater can each go red |
+| **`status.sh`** | what the estate is doing right now, computed rather than remembered: it runs the project's own read-only probes (`status.project.sh`, one finding per line with a level, a subject, a detail and a remedy a person can paste) and the declared deadlines (`deadlines.conf`, only the dates no system can answer, with a lead time and an owner), exits 1 on anything RED, and `/orient` runs it first and leads with the RED lines. A finding it cannot parse is a RED of its own, and its canary must fail |
+| **`preflight.sh`** | proves, read-only, which capabilities this machine and identity hold before a runbook is followed: the tokens a page names in its `requires:` header, each defined on the capabilities page with a blast marker, a proof command, the expected output and how to obtain it. An UNRESOLVED row is reported, never invented around, and the knowledge check refuses a token the page does not define |
+| **`verify.sh`** | the checks that exist here, a canary that must fail, and four test suites that prove the hooks, the knowledge checks, the updater, and the estate gate can each go red |
 
 Every hook ships in PowerShell and in Bash, because the host launches whichever the machine runs.
 The tools are Bash, so Windows needs Git Bash; that is stated again under Install, because it is the
@@ -131,6 +133,9 @@ disposable folder.
 9. **Keep negative results.** A thing that turned out not to be true saves the next person a day.
 10. **The grader must not be the worker.** A fresh-context review is the default; a second model is
     optional and read-only.
+11. **If it can be read from a system, it is not a document.** A version, an expiry, a count written
+    into a page is true for a week and then lies silently; write the probe instead, and keep in a
+    file only the dates no system can answer.
 
 ## The knowledge base
 
@@ -234,8 +239,8 @@ way.
   rules/            standing-orders · writing · working-here · knowledge-base · methodology (this repo's own)
   skills/           orient · work · codex-relay · test-guide · pr · board · record · handoff · explain · summarize
   hooks/            guard-secrets · guard-commands · verify-on-finish · resume-brief, each .ps1 and .sh
-  tools/            layout.sh · verify.sh · baseline.sh · knowledge-check.sh · install.sh · install.ps1
-                    hooks.test.sh · knowledge-check.test.sh · install.test.sh · stop-hook-canary.test.js
+  tools/            layout.sh · verify.sh · baseline.sh · knowledge-check.sh · status.sh · preflight.sh · install.sh · install.ps1
+                    hooks.test.sh · knowledge-check.test.sh · install.test.sh · estate.test.sh · stop-hook-canary.test.js
   install-manifest.txt  what the installer gave you, so an update can tell your edits from ours
   knowledge-drift.conf  this repository's curated list of counts the README states
   settings.json     the hook wiring

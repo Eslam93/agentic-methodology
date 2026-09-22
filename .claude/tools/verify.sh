@@ -62,6 +62,12 @@ if [ "$mode" = "--canary" ]; then
     fi
     rm -rf "$c"
   fi
+  # Third, that the estate gate can report a RED: status.sh is fed a synthetic RED and a malformed line.
+  if [ -f .claude/tools/status.sh ]; then
+    if bash .claude/tools/status.sh --canary >/dev/null 2>&1; then
+      bad "status.sh goes red on a synthetic RED and a malformed line" "its canary passed; status.sh cannot gate, and the estate step of /orient is decoration"
+    else ok "status.sh goes red on a synthetic RED and a malformed line"; fi
+  fi
   bad "canary: this check must fail" "if this run reports success, the runner is lying and its greens are void"
   echo; echo "  $PASS passed, $FAIL failed (canary run)"; exit 1
 fi
@@ -262,6 +268,30 @@ if [ -f .claude/hooks/guard-commands.sh ]; then
   else ok "guard-commands.sh blocks its self-test marker"; fi
 fi
 
+# --- 12b · the estate: status.sh can go red, and the project's two inputs parse -------------------
+# The probes themselves are not run here: they reach live systems and belong to /orient. What a
+# deterministic run can prove is that the gate reports a RED when given one, that deadlines.conf is
+# well formed, and that status.project.sh at least parses.
+if [ -f .claude/tools/status.sh ]; then
+  if bash .claude/tools/status.sh --canary >/dev/null 2>&1; then bad "status.sh goes red on a synthetic RED and a malformed line" "its canary passed; status.sh cannot gate"
+  else ok "status.sh goes red on a synthetic RED and a malformed line"; fi
+  if [ -f .claude/tools/status.project.sh ] || [ -f .claude/deadlines.conf ]; then
+    if stout="$(bash .claude/tools/status.sh --check 2>&1)"; then ok "status inputs parse ($(printf '%s\n' "$stout" | grep -E '^[0-9]+ RED' | head -1))"
+    else bad "status inputs parse" "$(printf '%s\n' "$stout" | grep -E '^  [a-z]|^ {13}' | head -3 | tr '\n' ' ')"; fi
+  else note "no status.project.sh and no deadlines.conf; the estate answers nothing yet"; fi
+else
+  bad "status.sh present" "missing; /orient cannot compute what the estate is doing"
+fi
+
+# --- 12c · the capabilities page parses, when there is one ---------------------------------------
+cap=""; for p in docs/knowledge-base/00-orientation/capabilities.md knowledge-base/00-orientation/capabilities.md; do [ -f "$p" ] && cap="$p"; done
+if [ -n "$cap" ]; then
+  if [ -f .claude/tools/preflight.sh ]; then
+    if pfout="$(bash .claude/tools/preflight.sh --list 2>&1)"; then ok "capabilities page parses ($(printf '%s\n' "$pfout" | grep -c '^  ') tokens)"
+    else bad "capabilities page parses" "$(printf '%s\n' "$pfout" | tail -2 | tr '\n' ' ')"; fi
+  else bad "preflight.sh present" "there is a capabilities page at $cap and no tool to prove it"; fi
+fi
+
 # --- 13 · layout resolves when a workspace marker exists ------------------------------------------
 if [ -f .workspace ]; then
   . .claude/tools/layout.sh
@@ -280,6 +310,12 @@ if [ "$mode" = "--hooks" ]; then
     if bash .claude/tools/knowledge-check.test.sh; then ok "knowledge-check.test.sh passed"
     else bad "knowledge-check.test.sh passed" "an invalid record passed, or a valid one failed; see above"; fi
   else bad "knowledge-check.test.sh present" "missing"; fi
+
+  echo; note "estate cases (status.sh and preflight.sh run against fixture trees, one per invariant)"
+  if [ -f .claude/tools/estate.test.sh ]; then
+    if bash .claude/tools/estate.test.sh; then ok "estate.test.sh passed"
+    else bad "estate.test.sh passed" "a gate that should go red stayed green, or a good input was refused; see above"; fi
+  else bad "estate.test.sh present" "missing"; fi
 
   echo; note "installer cases (the real installer run against a fake kit, one per update state)"
   if [ -f .claude/tools/install.test.sh ]; then

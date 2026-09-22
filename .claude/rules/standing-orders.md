@@ -29,7 +29,8 @@ Every piece of work gets a **tier**, stated in one line the owner can override:
 
 **The hard floor:** auth, authorization, payments, secrets, data migration, a public API or
 contract, a security control, cross-module architecture. Any of these is Tier 3 and cannot be
-tiered down. Round up when unsure.
+tiered down. Round up when unsure. A task whose runbook names, in its `requires:` field, a capability
+marked as touching production is Tier 3 by that alone.
 
 After the yes, **build uninterrupted.** Pause only for the stop-list: a Tier-3 area touched
 unexpectedly · a new dependency · a schema or migration change · data deletion · anything reaching
@@ -79,6 +80,11 @@ the session after changing either.**
 One more thing is mechanical, and it is a check rather than a hook: `verify.sh` refuses a knowledge
 base whose durable pages lack the required header, whose checked references do not resolve, or whose
 README states a count the tree contradicts. It decides structure, never whether a claim is true.
+
+Two more things are checks rather than hooks. `status.sh` computes what the estate is doing right
+now from the project's own read-only probes and its declared deadlines, and exits red on anything
+RED; `/orient` runs it first and leads with those lines. `preflight.sh` proves, read-only, the
+capabilities a page requires; `/work` runs it before the one yes. `verify.sh` proves both can go red.
 
 ## Where things live
 

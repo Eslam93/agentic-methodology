@@ -234,6 +234,21 @@ fence { next }
   }
 }'
 
+# The header field `requires:` names capability tokens. Each must be a row on the capabilities page,
+# where a token carries a read-only proof; a token nobody defined is a runbook nobody can check.
+req_awk='
+NR == 1 { if ($0 !~ /^---[ \t\r]*$/) exit; next }
+/^---[ \t\r]*$/ { exit }
+/^requires:/ {
+  line = $0; sub(/^requires:/, "", line)
+  while (match(line, /[A-Z][A-Z0-9-]+/)) {
+    tok = substr(line, RSTART, RLENGTH)
+    if (length(tok) >= 3) print "requires\t" tok
+    line = substr(line, RSTART + RLENGTH)
+  }
+}'
+cappage=""; [ -f "$kb/00-orientation/capabilities.md" ] && cappage="$kb/00-orientation/capabilities.md"
+
 # The defined decision codes, gathered once. An empty set means the pattern is broken, not that the
 # page has no decisions, so it fails rather than letting every citation pass.
 defined=""
@@ -259,6 +274,7 @@ while IFS= read -r page; do
   [ -n "$page" ] || continue
   dir="${page%/*}"
   awk "$refs_awk" "$page" > "$TMP/refs"
+  awk "$req_awk" "$page" >> "$TMP/refs"
   while IFS=$'\t' read -r kind value; do
     [ -n "$value" ] || continue
     # A citation holding < > or * is a template, in every form: angle brackets are this base's
@@ -292,6 +308,14 @@ while IFS= read -r page; do
           git -C "$co" cat-file -e "$value^{commit}" 2>/dev/null && { found=1; break; }
         done
         [ "$found" = 1 ] || fail references "$page" "referenced commit does not resolve: $value"
+        ;;
+      requires)
+        s_references=$((s_references+1))
+        if [ -z "$cappage" ]; then
+          fail references "$page" "requires $value, but there is no capabilities page at 00-orientation/capabilities.md"
+        elif ! grep -qE "^\| *\`$value\` *\|" "$cappage"; then
+          fail references "$page" "requires a capability the capabilities page does not define: $value"
+        fi
         ;;
       code)
         s_references=$((s_references+1))
