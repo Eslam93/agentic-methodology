@@ -113,7 +113,12 @@ would otherwise get wrong, dated and re-checkable by command:
 - **Running it:** the build command, the start command, the test command, and how long each takes.
 - **Verify:** what `.claude/tools/verify.project.sh` runs; write that script from the commands
   above, so `verify.sh --full` runs the project's own checks.
-- **Deployed-state check:** the command or endpoint, and what it returns.
+- **Deployed-state check:** the command or endpoint, and what it returns, written as a probe in
+  `.claude/tools/status.project.sh` (one finding per line: level, section, subject, detail, remedy),
+  with the dates no system can answer in `.claude/deadlines.conf`. `/orient` runs `status.sh` first.
+- **Capabilities:** `00-orientation/capabilities.md` in the knowledge base, one row per token with a
+  blast marker, a read-only proof command, the expected output and how to obtain it; the runbook
+  pages name them in `requires:`, and `preflight.sh -c` proves them.
 - **Tracker:** kind, organisation and project, the token variable name (never the value), and the
   fields, states, and custom fields measured from real items.
 - **Data posture** and any project additions to the confirm-before list.
@@ -137,6 +142,7 @@ speculative. Everything written here follows `.claude/rules/knowledge-base.md`.
 bash .claude/tools/verify.sh            # all green
 bash .claude/tools/verify.sh --hooks    # every hook fired by hand, both shells
 bash .claude/tools/verify.sh --canary   # must FAIL; a runner that passes it is lying
+bash .claude/tools/status.sh --canary   # must FAIL too; the estate gate has its own runner
 ```
 
 Copy `.github/workflows/verify.yml` from the kit into the project's workflows if it uses GitHub
@@ -165,6 +171,8 @@ Run these and report the results honestly. Do not report a pass you did not obse
 | 15 | after a compaction, continue a task with a brief in `working/<task>/brief.md` | the brief is back in context without anyone re-planning |
 | 16 | `/goal` with the verify command as the condition | the session keeps checking after each turn until it passes |
 | 17 | `/board` told to "just close it" | it proposes and stops; nothing is written that turn |
+| 18 | `status.sh --canary` | fails, and says a synthetic RED and a malformed line were both reported |
+| 19 | a page's `requires:` names a token the capabilities page does not define | `verify.sh` goes red naming the token |
 
 ## 8 · How a session runs from here
 

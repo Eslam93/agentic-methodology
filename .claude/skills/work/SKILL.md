@@ -73,6 +73,9 @@ A bottom line of what you are about to do, then the details, in the house writin
 - **the branch sentence:** which repository, cut from which branch after a fetch, following the
   project rule's branch model; which branch the pull request targets. When the repository does not
   follow the model, put the evidence in front of them and ask one question with the options named
+- **the capabilities it needs, proven:** when a page the task follows names tokens in its `requires:`
+  field, `bash .claude/tools/preflight.sh -c <tokens>` has run before this message, and any FAIL or
+  UNRESOLVED is named here; a token marked as touching production makes the task Tier 3
 - the tier line, and the route: Codex design review first, or go, with the default stated. Tier 3
   review, Tier 2 offer it, Tier 1 go
 

@@ -82,3 +82,29 @@ search for the same root cause. Same cause with a different symptom means merge,
   a file under `docs/knowledge-base/` left `knowledge-base.md` out of context for a whole turn; the
   `Read` tool on the same file brought it in at once. A session that prefers the shell writes
   knowledge-base pages without the rule that says how. Open one page with `Read` first. 2026-09-05.
+
+## Reasoning
+
+The traps above are about shells. These are about judgement, and they cost more. All five were
+measured on production questions on one installation.
+
+- **The size of a mechanism reported as its effect.** A migration said to "revoke entitlements from
+  353 subscriptions" read a collection holding zero documents; "86 of 88 messages dropped" counted
+  52 correct skips and the system's own echoes; a dead-token alarm fired on channels where 1,083
+  sends had just succeeded. Count the thing the customer has, not the thing the code touches; trace
+  one item end to end before trusting an aggregate; check whose. 2026-08-02 to 2026-08-08.
+- **A green test on an unreachable path.** A fix recorded as proven by an offline replay (12 of 77
+  cases to 44 of 77) had fired zero times in production: the replay supplied an input the running
+  system never produces. Ask of any passing suite which line would fail if the claim were false,
+  and after a deploy look for the success line the fix emits, not the failure line. 2026-08-24.
+- **The dangerous zero.** Three zeros in one day meant "my question could not see it": a query that
+  had never run, a grep for a guard an upstream check made unreachable, and a health query reporting
+  zero healthy targets on a system that was visibly serving. Before believing a zero, confirm the
+  same query sees something you are certain exists. A zero that fits your hypothesis deserves more
+  scrutiny than one that contradicts it. 2026-08-24.
+- **An instrument that measures itself.** A counter built to measure a behaviour scanned the very
+  text it was measuring and always agreed with itself. Validate a new instrument against a case
+  whose answer you already know before citing it. 2026-08-24.
+- **Log volume read as usage.** A service with 26 log lines a day was written down as idle; it
+  carried all console traffic and logged at Warning. A quiet log is a mechanism; find the callers in
+  configuration and client code, which is the effect. 2026-09-20.

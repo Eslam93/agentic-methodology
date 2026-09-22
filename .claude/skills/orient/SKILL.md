@@ -49,12 +49,19 @@ when the ref was last fetched. In a workspace, say which branch each clone is on
 branch is often not the trunk. Uncommitted work means somebody was mid-task. Say what is
 uncommitted and leave it.
 
-## 4 · What is actually deployed, when the project rule names a way to check
+## 4 · What the estate is doing, computed
 
-Git does not know what is on the server. When the project rule names a deployed-state check (a
-health endpoint that reports the running commit, a deploy tag, a file on the host), run it and
-compare: `git log --oneline <deployed-commit>..origin/<trunk>` is what is not yet live. When there
-is no such check, say so rather than guessing.
+```bash
+bash .claude/tools/status.sh
+```
+
+It runs the project's own read-only probes (`.claude/tools/status.project.sh`) and the declared
+deadlines (`.claude/deadlines.conf`), and exits 1 on anything RED. **Lead the report with the RED
+lines, each with its remedy:** a RED that stays inside the session is a RED nobody sees. Git does
+not know what is on the server; when a probe reports the deployed commit, `git log --oneline
+<deployed-commit>..origin/<trunk>` is what is not yet live. When the project has no probes yet the
+tool says so, and you say that rather than guessing. If a value you are about to state could be
+read from a system, it belongs in `status.project.sh`, not in the report.
 
 ## 5 · Does it still verify
 
@@ -74,7 +81,7 @@ Five lines, no headings:
 1. which branch, per clone in a workspace, and whether it is ahead of its upstream
 2. where the last session got to, with its date
 3. what is uncommitted or unfinished
-4. what verify reported
+4. what status and verify reported, RED first
 5. **the one thing most worth doing next**, named. Not a list of five.
 
 Then stop and let the human choose.

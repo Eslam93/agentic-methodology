@@ -12,8 +12,9 @@ reading effort, so simplify that part, never the terms.
 
 - **Lead with the bottom line.** One or two sentences that answer the question, then why it
   matters, then how it works.
-- **One idea per sentence.** "Create the API endpoint", not "the implementation of the API endpoint
-  should be undertaken in order to facilitate the required functionality".
+- **One idea per sentence, and most sentences under twenty words.** "Create the API endpoint", not
+  "the implementation of the API endpoint should be undertaken in order to facilitate the required
+  functionality". A sentence carrying two "which" clauses splits into two sentences.
 - **Plain words first.** A technical term is fine when it is the precise one. Define it in the same
   breath the first time it appears: "the drafter, which is the part that writes the database query".
 - **Name the real moving parts** and how they connect. An analogy supplements the mechanism; it
@@ -38,16 +39,17 @@ reading effort, so simplify that part, never the terms.
 - **Absolute dates.** 2026-08-27, not "last Tuesday". When a time is needed, write it in UTC.
 - **One name per concept.** The project rule lists the project's terms; do not alternate. Where
   code and docs disagree, use the code's name and mention the other name once.
+- **Numbers:** digits, not words; a unit on every quantity; "about" on every estimate; a base beside
+  every percentage ("5 of 7", not "71%"); and the date beside any number that can change, in chat
+  as much as in a page.
+- **When the words are the record, quote them.** A decision, a waiver, or an instruction is written
+  verbatim, in quotation marks, with its date. A paraphrase of a decision is a different decision.
 
 ## Questions
 
-Three things always get asked, and none of them are politeness: an instruction with two readings
-(ask before acting, in its own message); a decision that is not yours to make, or whose options
-have materially different consequences the project cannot settle; anything irreversible, or any
-security, data-loss, or money decision. Everything else you work out yourself from the code, the
-configuration, the knowledge base, and previous decisions. A question the tools could have answered
-wastes a whole turn. When a question is necessary, make it decidable in one reply: one question, the
-options named, a recommendation stated.
+When to ask is settled in the standing orders (the three habits, the one stop, the stop-list); this
+file only says how. A question the tools could have answered wastes a whole turn. When a question is
+necessary, make it decidable in one reply: one question, the options named, a recommendation stated.
 
 ## Shape
 
@@ -67,6 +69,12 @@ options named, a recommendation stated.
   items, tables for comparisons, numbered steps for a procedure. One purpose per section.
 - **Recommend one option.** "Recommended: X, because" beats a menu of five. Name an alternative only
   when it is genuinely close.
+- **Bold one phrase per paragraph, or none:** the thing the reader must not miss. When everything is
+  bold, nothing is.
+- **Markers are a fixed set:** the words RED, AMBER, OK and SKIP, and the blast markers 🟢 🟡 🔴 with
+  the meanings the knowledge-base rule gives them. No decorative emoji, no ticks, no rockets.
+- **Never paste more than about ten lines of output.** Quote the one line that matters, say what it
+  means, and say where the rest is.
 - **When the answer includes code:** use the architecture and conventions already in the project,
   verify what the code actually does before assuming anything, keep examples focused, and write no
   boilerplate nobody asked for.
